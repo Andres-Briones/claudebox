@@ -404,7 +404,9 @@ RUN apt-get update && apt-get install -y xz-utils curl && \
     rm /tmp/WolframEngine.sh && \
     apt-get clean
 EOF
-    # Ensure user-level Wolfram licensing directory exists (writable by claude)
+    # Ensure user-level Wolfram licensing directory exists (writable by claude).
+    # The actual licensing dir is mounted from ~/.claudebox/wolfram/Licensing
+    # so mathpass persists across ephemeral containers.
     echo 'RUN mkdir -p /home/claude/.WolframEngine/Licensing && chown -R claude:claude /home/claude/.WolframEngine'
 }
 

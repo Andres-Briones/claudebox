@@ -371,6 +371,15 @@ run_claudebox_container() {
     fi
     
     
+    # Mount Wolfram Engine licensing directory if it exists (persists activation across containers)
+    local wolfram_licensing="${CLAUDEBOX_HOME}/wolfram/Licensing"
+    if [[ -d "$wolfram_licensing" ]]; then
+        docker_args+=(-v "$wolfram_licensing:/home/claude/.WolframEngine/Licensing")
+        if [[ "$VERBOSE" == "true" ]]; then
+            printf '[DEBUG] Mounting Wolfram licensing from %s\n' "$wolfram_licensing" >&2
+        fi
+    fi
+
     # Load custom environment file if it exists (~/.claudebox/env)
     local env_file="${CLAUDEBOX_HOME}/env"
     if [[ -f "$env_file" ]]; then
