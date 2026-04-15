@@ -371,8 +371,9 @@ run_claudebox_container() {
     fi
     
     
-    # Mount Wolfram Engine licensing directory if it exists (persists activation across containers)
+    # Mount Wolfram Engine licensing directory (persists activation across containers)
     local wolfram_licensing="${CLAUDEBOX_HOME}/wolfram/Licensing"
+    mkdir -p "$wolfram_licensing"
     if [[ -d "$wolfram_licensing" ]]; then
         docker_args+=(-v "$wolfram_licensing:/home/claude/.WolframEngine/Licensing")
         if [[ "$VERBOSE" == "true" ]]; then
