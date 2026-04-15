@@ -139,6 +139,46 @@ git clone https://github.com/Andres-Briones/claudebox.git ~/.claudebox/source
 
 To update: `cd ~/.claudebox/source && git pull`
 
+### Custom API Provider (env file)
+
+You can route claudebox through an alternative API provider (e.g., OpenRouter) by creating a `~/.claudebox/env` file. This file is passed to the container via Docker's `--env-file` flag.
+
+**Setup:**
+
+```bash
+# Copy the example and edit with your values
+cp ~/.claudebox/source/examples/env.example ~/.claudebox/env
+nano ~/.claudebox/env
+```
+
+**Example `~/.claudebox/env` for OpenRouter:**
+
+```
+ANTHROPIC_BASE_URL=https://openrouter.ai/api
+ANTHROPIC_AUTH_TOKEN=sk-or-v1-your-token-here
+ANTHROPIC_API_KEY=
+ANTHROPIC_DEFAULT_OPUS_MODEL=anthropic/claude-opus-4
+ANTHROPIC_DEFAULT_SONNET_MODEL=anthropic/claude-sonnet-4
+ANTHROPIC_DEFAULT_HAIKU_MODEL=anthropic/claude-haiku
+```
+
+Restart the container after creating or modifying the env file.
+
+**Switching between providers:**
+
+Use the toggle script to quickly switch between the default Anthropic API and your custom provider:
+
+```bash
+# Toggle provider (renames env <-> env.bak)
+~/.claudebox/source/examples/toggle-provider.sh
+
+# Or copy it somewhere convenient
+cp ~/.claudebox/source/examples/toggle-provider.sh ~/.local/bin/claudebox-provider
+claudebox-provider
+```
+
+When the env file is present, claudebox uses your custom provider. When removed (backed up to `env.bak`), it falls back to the default Anthropic API with your `ANTHROPIC_API_KEY`. Restart the container after toggling.
+
 ### PATH Configuration
 
 If `claudebox` command is not found after installation, add `~/.local/bin` to your PATH:
