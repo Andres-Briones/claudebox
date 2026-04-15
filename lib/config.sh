@@ -424,7 +424,7 @@ get_profile_wolfram_cloud() {
     #   or via wolframscript if installed separately
     cat << 'EOF'
 USER claude
-RUN ~/.local/bin/uv pip install --system wolframclient
+RUN ~/.local/bin/uv tool install wolframclient
 USER root
 EOF
 }
