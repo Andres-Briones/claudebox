@@ -67,7 +67,7 @@ get_profile_description() {
         ml) echo "Machine Learning (build layer only; Python via uv)" ;;
         latex)   echo "LaTeX + Emacs (TeX Live base, Emacs, feynmp-auto for Feynman diagrams)" ;;
         wolfram) echo "Wolfram Engine 14 (Mathematica kernel, wolframscript)" ;;
-        wolfram-cloud) echo "Wolfram Cloud (lightweight wolframscript, cloud computation)" ;;
+        wolfram-cloud) echo "Wolfram Cloud (Python wolframclient, cloud computation, no local engine)" ;;
         *) echo "" ;;
     esac
 }
@@ -416,18 +416,16 @@ EOF
 }
 
 get_profile_wolfram_cloud() {
-    # Installs wolframscript standalone (cloud mode) — no local engine needed (~10MB).
-    # Uses Wolfram Cloud for computation instead of a local kernel.
-    # First run: authenticate with your Wolfram ID (free account at wolfram.com/engine/free-license)
-    #   wolframscript -cloud -code "2+2"
+    # Installs wolframclient Python library for Wolfram Cloud access.
+    # No local engine needed — uses Wolfram Cloud for computation.
+    # Requires free Wolfram ID (wolfram.com/engine/free-license).
+    # Usage:
+    #   python -c "from wolframclient.evaluation import WolframCloudSession; ..."
+    #   or via wolframscript if installed separately
     cat << 'EOF'
-RUN DEBIAN_FRONTEND=noninteractive apt-get update && \
-    DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends curl && \
-    curl -L "https://account.wolfram.com/dl/WolframScript?platform=Linux" -o /tmp/wolframscript.deb && \
-    dpkg -i /tmp/wolframscript.deb && \
-    rm /tmp/wolframscript.deb && \
-    apt-get clean && rm -rf /var/lib/apt/lists/*
-RUN mkdir -p /home/claude/.WolframEngine/Licensing && chown -R claude:claude /home/claude/.WolframEngine
+USER claude
+RUN ~/.local/bin/uv pip install --system wolframclient
+USER root
 EOF
 }
 
