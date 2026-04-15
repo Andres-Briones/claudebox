@@ -425,7 +425,7 @@ get_profile_wolfram_cloud() {
     cat << 'EOF'
 USER claude
 RUN ~/.local/bin/uv venv /home/claude/.wolfram-venv && \
-    /home/claude/.wolfram-venv/bin/pip install wolframclient
+    ~/.local/bin/uv pip install --python /home/claude/.wolfram-venv/bin/python wolframclient
 USER root
 ENV PATH="/home/claude/.wolfram-venv/bin:$PATH"
 EOF
