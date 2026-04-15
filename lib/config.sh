@@ -424,8 +424,10 @@ get_profile_wolfram_cloud() {
     #   or via wolframscript if installed separately
     cat << 'EOF'
 USER claude
-RUN ~/.local/bin/uv tool install wolframclient
+RUN ~/.local/bin/uv venv /home/claude/.wolfram-venv && \
+    /home/claude/.wolfram-venv/bin/pip install wolframclient
 USER root
+ENV PATH="/home/claude/.wolfram-venv/bin:$PATH"
 EOF
 }
 
