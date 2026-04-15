@@ -64,7 +64,7 @@ get_profile_description() {
         datascience) echo "Data Science (Python, Jupyter, R)" ;;
         security) echo "Security Tools (scanners, crackers, packet tools)" ;;
         ml) echo "Machine Learning (build layer only; Python via uv)" ;;
-        latex)   echo "LaTeX + Emacs (TeX Live full, Emacs, feynmp-auto for Feynman diagrams)" ;;
+        latex)   echo "LaTeX + Emacs (TeX Live base, Emacs, feynmp-auto for Feynman diagrams)" ;;
         wolfram) echo "Wolfram Engine 14 (Mathematica kernel, wolframscript)" ;;
         *) echo "" ;;
     esac
@@ -374,10 +374,9 @@ get_profile_latex() {
     cat << 'EOF'
 RUN DEBIAN_FRONTEND=noninteractive apt-get update && \
     DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
-    emacs-nox texlive-latex-recommended texlive-latex-extra \
-    texlive-fonts-recommended texlive-fonts-extra texlive-science \
-    texlive-pictures texlive-metapost texlive-bibtex-extra \
-    latexmk curl unzip && \
+    emacs-nox texlive-latex-recommended texlive-fonts-recommended \
+    texlive-science texlive-pictures texlive-metapost \
+    texlive-bibtex-extra latexmk curl unzip && \
     apt-get clean && rm -rf /var/lib/apt/lists/*
 RUN curl -L https://mirrors.ctan.org/macros/latex/contrib/feynmp-auto.zip -o /tmp/feynmp-auto.zip && \
     unzip /tmp/feynmp-auto.zip -d /tmp && \
