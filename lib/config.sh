@@ -397,21 +397,19 @@ get_profile_wolfram() {
     # It will prompt for your Wolfram ID (email) and password from your
     # free account at wolfram.com/engine/free-license
     cat << 'EOF'
-RUN apt-get update && apt-get install -y xz-utils curl && \
-    curl -L "https://account.wolfram.com/dl/WolframEngine?platform=Linux" -o /tmp/WolframEngine.sh && \
-    chmod +x /tmp/WolframEngine.sh && \
-    /tmp/WolframEngine.sh -- -auto -verbose && \
+RUN DEBIAN_FRONTEND=noninteractive apt-get update && \
+    DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends xz-utils wget && \
+    apt-get clean && rm -rf /var/lib/apt/lists/*
+RUN wget -q https://account.wolfram.com/download/public/wolfram-engine/desktop/LINUX -O /tmp/WolframEngine.sh && \
+    bash /tmp/WolframEngine.sh -- -auto -verbose && \
     WDIR=$(find /usr/local/Wolfram -name "WolframKernel" -type f 2>/dev/null | head -1) && \
     WDIR=$(dirname "$WDIR") && \
     ln -sf "$WDIR/math" /usr/local/bin/math && \
     ln -sf "$WDIR/wolfram" /usr/local/bin/wolfram && \
-    rm /tmp/WolframEngine.sh && \
-    apt-get clean
+    ln -sf "$WDIR/wolframscript" /usr/local/bin/wolframscript && \
+    rm /tmp/WolframEngine.sh
+RUN mkdir -p /home/claude/.WolframEngine/Licensing && chown -R claude:claude /home/claude/.WolframEngine
 EOF
-    # Ensure user-level Wolfram licensing directory exists (writable by claude).
-    # The actual licensing dir is mounted from ~/.claudebox/wolfram/Licensing
-    # so mathpass persists across ephemeral containers.
-    echo 'RUN mkdir -p /home/claude/.WolframEngine/Licensing && chown -R claude:claude /home/claude/.WolframEngine'
 }
 
 export -f _read_ini get_profile_packages get_profile_description get_all_profile_names profile_exists expand_profile
