@@ -65,7 +65,7 @@ get_profile_description() {
         security) echo "Security Tools (scanners, crackers, packet tools)" ;;
         ml) echo "Machine Learning (build layer only; Python via uv)" ;;
         latex)   echo "LaTeX + Emacs (TeX Live base, Emacs, feynmp-auto for Feynman diagrams)" ;;
-        wolfram) echo "Wolfram Cloud (wolframscript, cloud-based computation)" ;;
+        wolfram) echo "Wolfram Engine 14 (Mathematica kernel, wolframscript)" ;;
         *) echo "" ;;
     esac
 }
@@ -391,17 +391,24 @@ EOF
 }
 
 get_profile_wolfram() {
-    # Installs wolframscript standalone (cloud mode) — no local engine needed.
-    # Uses Wolfram Cloud for computation (~10MB vs ~3.5GB for full engine).
-    # First run: authenticate with your Wolfram ID (free account at wolfram.com/engine/free-license)
-    #   wolframscript -cloud -code "2+2"
+    # Installs Wolfram Engine (free tier) for running Mathematica .m scripts.
+    # After image build, activate once interactively inside the container:
+    #   wolframscript
+    # It will prompt for your Wolfram ID (email) and password from your
+    # free account at wolfram.com/engine/free-license
     cat << 'EOF'
 RUN DEBIAN_FRONTEND=noninteractive apt-get update && \
-    DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends curl && \
-    curl -L "https://account.wolfram.com/dl/WolframScript?platform=Linux" -o /tmp/wolframscript.deb && \
-    dpkg -i /tmp/wolframscript.deb && \
-    rm /tmp/wolframscript.deb && \
+    DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends xz-utils curl && \
     apt-get clean && rm -rf /var/lib/apt/lists/*
+RUN curl -L "https://account.wolfram.com/dl/WolframEngine?platform=Linux" -o /tmp/WolframEngine.sh && \
+    chmod +x /tmp/WolframEngine.sh && \
+    /tmp/WolframEngine.sh -- -auto -verbose && \
+    WDIR=$(find /usr/local/Wolfram -name "WolframKernel" -type f 2>/dev/null | head -1) && \
+    WDIR=$(dirname "$WDIR") && \
+    ln -sf "$WDIR/math" /usr/local/bin/math && \
+    ln -sf "$WDIR/wolfram" /usr/local/bin/wolfram && \
+    ln -sf "$WDIR/wolframscript" /usr/local/bin/wolframscript && \
+    rm /tmp/WolframEngine.sh
 RUN mkdir -p /home/claude/.WolframEngine/Licensing && chown -R claude:claude /home/claude/.WolframEngine
 EOF
 }
