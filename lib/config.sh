@@ -35,6 +35,8 @@ get_profile_packages() {
         datascience) echo "r-base" ;;
         security) echo "nmap tcpdump wireshark-common netcat-openbsd john hashcat hydra" ;;
         ml) echo "" ;;  # Just cmake needed, comes from build-tools now
+        latex) echo "" ;;  # Custom install via heredoc
+        wolfram) echo "" ;;  # Custom install via heredoc
         *) echo "" ;;
     esac
 }
@@ -62,12 +64,14 @@ get_profile_description() {
         datascience) echo "Data Science (Python, Jupyter, R)" ;;
         security) echo "Security Tools (scanners, crackers, packet tools)" ;;
         ml) echo "Machine Learning (build layer only; Python via uv)" ;;
+        latex)   echo "LaTeX + Emacs (TeX Live full, Emacs, feynmp-auto for Feynman diagrams)" ;;
+        wolfram) echo "Wolfram Engine 14 (Mathematica kernel, wolframscript)" ;;
         *) echo "" ;;
     esac
 }
 
 get_all_profile_names() {
-    echo "core build-tools shell networking c openwrt rust python go flutter javascript java ruby php database devops web embedded datascience security ml"
+    echo "core build-tools shell networking c openwrt rust python go flutter javascript java ruby php database devops web embedded datascience security ml latex wolfram"
 }
 
 profile_exists() {
@@ -89,6 +93,7 @@ expand_profile() {
         shell|networking|build-tools|core)
             echo "$1"
             ;;
+        latex|wolfram) echo "$1" ;;
         *)
             echo "$1"
             ;;
@@ -365,9 +370,47 @@ get_profile_ml() {
     echo "# ML profile uses build-tools for compilation"
 }
 
+get_profile_latex() {
+    cat << 'EOF'
+RUN apt-get update && apt-get install -y emacs-nox texlive-latex-recommended texlive-latex-extra texlive-fonts-recommended texlive-fonts-extra texlive-science texlive-pictures texlive-metapost texlive-bibtex-extra latexmk curl unzip && \
+    curl -L https://mirrors.ctan.org/macros/latex/contrib/feynmp-auto.zip -o /tmp/feynmp-auto.zip && \
+    unzip /tmp/feynmp-auto.zip -d /tmp && \
+    INSDIR=$(find /tmp -maxdepth 2 -name "feynmp-auto.ins" | head -1 | xargs dirname) && \
+    /bin/sh -c "cd $INSDIR && pdflatex -interaction=nonstopmode feynmp-auto.ins" && \
+    TEXDIR=$(kpsewhich -var-value TEXMFLOCAL)/tex/latex/feynmp-auto && \
+    mkdir -p $TEXDIR && \
+    find /tmp -name "feynmp-auto.sty" -exec cp {} $TEXDIR/ \; && \
+    mktexlsr && \
+    rm -rf /tmp/feynmp-auto.zip /tmp/feynmp-auto && \
+    apt-get clean
+EOF
+}
+
+get_profile_wolfram() {
+    # Installs Wolfram Engine (free tier) for running Mathematica .m scripts.
+    # After image build, activate once interactively inside the container:
+    #   wolframscript
+    # It will prompt for your Wolfram ID (email) and password from your
+    # free account at wolfram.com/engine/free-license
+    cat << 'EOF'
+RUN apt-get update && apt-get install -y xz-utils curl && \
+    curl -L "https://account.wolfram.com/dl/WolframEngine?platform=Linux" -o /tmp/WolframEngine.sh && \
+    chmod +x /tmp/WolframEngine.sh && \
+    /tmp/WolframEngine.sh -- -auto -verbose && \
+    WDIR=$(find /usr/local/Wolfram -name "WolframKernel" -type f 2>/dev/null | head -1) && \
+    WDIR=$(dirname "$WDIR") && \
+    ln -sf "$WDIR/math" /usr/local/bin/math && \
+    ln -sf "$WDIR/wolfram" /usr/local/bin/wolfram && \
+    rm /tmp/WolframEngine.sh && \
+    apt-get clean
+EOF
+    # Ensure user-level Wolfram licensing directory exists (writable by claude)
+    echo 'RUN mkdir -p /home/claude/.WolframEngine/Licensing && chown -R claude:claude /home/claude/.WolframEngine'
+}
+
 export -f _read_ini get_profile_packages get_profile_description get_all_profile_names profile_exists expand_profile
 export -f get_profile_file_path read_config_value read_profile_section update_profile_section get_current_profiles
 export -f get_profile_core get_profile_build_tools get_profile_shell get_profile_networking get_profile_c get_profile_openwrt
 export -f get_profile_rust get_profile_python get_profile_go get_profile_flutter get_profile_javascript get_profile_java get_profile_ruby
 export -f get_profile_php get_profile_database get_profile_devops get_profile_web get_profile_embedded get_profile_datascience
-export -f get_profile_security get_profile_ml
+export -f get_profile_security get_profile_ml get_profile_latex get_profile_wolfram
