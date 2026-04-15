@@ -112,7 +112,19 @@ bash .builder/build.sh
 
 ### Installing This Fork
 
-This fork includes bug fixes and additional features (env file support, LaTeX and Wolfram profiles). To use it instead of the upstream version:
+This fork includes the following changes over [upstream](https://github.com/RchGrav/claudebox):
+
+**Bug fixes:**
+- Fix missing `||` operator in Dockerfile placeholder guard (`main.sh`)
+- Fix `local` keyword used outside functions in `docker-entrypoint` (lines 86, 109, 141)
+
+**Features:**
+- Custom environment file support (`~/.claudebox/env`) via Docker `--env-file` — use alternative API providers (OpenRouter, local proxies) without modifying source code
+- Provider toggle script (`examples/toggle-provider.sh`) to switch between Anthropic and custom providers
+- **LaTeX profile** — TeX Live, Emacs, feynmp-auto for Feynman diagrams
+- **Wolfram profile** — Wolfram Engine 14 with persistent licensing across containers
+
+To use it instead of the upstream version:
 
 ```bash
 # Fresh install
