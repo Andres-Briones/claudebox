@@ -110,6 +110,23 @@ bash .builder/build.sh
 ./claudebox.run
 ```
 
+### Installing This Fork
+
+This fork includes bug fixes and additional features (env file support, LaTeX and Wolfram profiles). To use it instead of the upstream version:
+
+```bash
+# Fresh install
+git clone https://github.com/Andres-Briones/claudebox.git ~/.claudebox/source
+mkdir -p ~/.local/bin
+ln -sf ~/.claudebox/source/main.sh ~/.local/bin/claudebox
+
+# Or replace an existing installation
+mv ~/.claudebox/source ~/.claudebox/source.bak
+git clone https://github.com/Andres-Briones/claudebox.git ~/.claudebox/source
+```
+
+To update: `cd ~/.claudebox/source && git pull`
+
 ### PATH Configuration
 
 If `claudebox` command is not found after installation, add `~/.local/bin` to your PATH:
