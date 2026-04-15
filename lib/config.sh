@@ -372,17 +372,22 @@ get_profile_ml() {
 
 get_profile_latex() {
     cat << 'EOF'
-RUN apt-get update && apt-get install -y emacs-nox texlive-latex-recommended texlive-latex-extra texlive-fonts-recommended texlive-fonts-extra texlive-science texlive-pictures texlive-metapost texlive-bibtex-extra latexmk curl unzip && \
-    curl -L https://mirrors.ctan.org/macros/latex/contrib/feynmp-auto.zip -o /tmp/feynmp-auto.zip && \
+RUN DEBIAN_FRONTEND=noninteractive apt-get update && \
+    DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+    emacs-nox texlive-latex-recommended texlive-latex-extra \
+    texlive-fonts-recommended texlive-fonts-extra texlive-science \
+    texlive-pictures texlive-metapost texlive-bibtex-extra \
+    latexmk curl unzip && \
+    apt-get clean && rm -rf /var/lib/apt/lists/*
+RUN curl -L https://mirrors.ctan.org/macros/latex/contrib/feynmp-auto.zip -o /tmp/feynmp-auto.zip && \
     unzip /tmp/feynmp-auto.zip -d /tmp && \
     INSDIR=$(find /tmp -maxdepth 2 -name "feynmp-auto.ins" | head -1 | xargs dirname) && \
-    /bin/sh -c "cd $INSDIR && pdflatex -interaction=nonstopmode feynmp-auto.ins" && \
+    cd "$INSDIR" && pdflatex -interaction=nonstopmode feynmp-auto.ins && \
     TEXDIR=$(kpsewhich -var-value TEXMFLOCAL)/tex/latex/feynmp-auto && \
-    mkdir -p $TEXDIR && \
-    find /tmp -name "feynmp-auto.sty" -exec cp {} $TEXDIR/ \; && \
+    mkdir -p "$TEXDIR" && \
+    find /tmp -name "feynmp-auto.sty" -exec cp {} "$TEXDIR/" \; && \
     mktexlsr && \
-    rm -rf /tmp/feynmp-auto.zip /tmp/feynmp-auto && \
-    apt-get clean
+    rm -rf /tmp/feynmp-auto.zip /tmp/feynmp-auto
 EOF
 }
 
