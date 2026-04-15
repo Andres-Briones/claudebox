@@ -371,6 +371,15 @@ run_claudebox_container() {
     fi
     
     
+    # Load custom environment file if it exists (~/.claudebox/env)
+    local env_file="${CLAUDEBOX_HOME}/env"
+    if [[ -f "$env_file" ]]; then
+        docker_args+=(--env-file "$env_file")
+        if [[ "$VERBOSE" == "true" ]]; then
+            printf '[DEBUG] Loading environment from %s\n' "$env_file" >&2
+        fi
+    fi
+
     # Add environment variables
     local project_name=$(basename "$PROJECT_DIR")
     local slot_name=$(basename "$PROJECT_SLOT_DIR")
