@@ -398,10 +398,11 @@ get_profile_wolfram() {
     # free account at wolfram.com/engine/free-license
     cat << 'EOF'
 RUN DEBIAN_FRONTEND=noninteractive apt-get update && \
-    DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends xz-utils wget && \
+    DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends xz-utils curl && \
     apt-get clean && rm -rf /var/lib/apt/lists/*
-RUN wget -q https://account.wolfram.com/download/public/wolfram-engine/desktop/LINUX -O /tmp/WolframEngine.sh && \
-    bash /tmp/WolframEngine.sh -- -auto -verbose && \
+RUN curl -L "https://account.wolfram.com/dl/WolframEngine?platform=Linux" -o /tmp/WolframEngine.sh && \
+    chmod +x /tmp/WolframEngine.sh && \
+    /tmp/WolframEngine.sh -- -auto -verbose && \
     WDIR=$(find /usr/local/Wolfram -name "WolframKernel" -type f 2>/dev/null | head -1) && \
     WDIR=$(dirname "$WDIR") && \
     ln -sf "$WDIR/math" /usr/local/bin/math && \
