@@ -37,6 +37,7 @@ get_profile_packages() {
         ml) echo "" ;;  # Just cmake needed, comes from build-tools now
         latex) echo "" ;;  # Custom install via heredoc
         wolfram) echo "" ;;  # Custom install via heredoc
+        wolfram-cloud) echo "" ;;  # Standalone wolframscript
         *) echo "" ;;
     esac
 }
@@ -66,12 +67,13 @@ get_profile_description() {
         ml) echo "Machine Learning (build layer only; Python via uv)" ;;
         latex)   echo "LaTeX + Emacs (TeX Live base, Emacs, feynmp-auto for Feynman diagrams)" ;;
         wolfram) echo "Wolfram Engine 14 (Mathematica kernel, wolframscript)" ;;
+        wolfram-cloud) echo "Wolfram Cloud (lightweight wolframscript, cloud computation)" ;;
         *) echo "" ;;
     esac
 }
 
 get_all_profile_names() {
-    echo "core build-tools shell networking c openwrt rust python go flutter javascript java ruby php database devops web embedded datascience security ml latex wolfram"
+    echo "core build-tools shell networking c openwrt rust python go flutter javascript java ruby php database devops web embedded datascience security ml latex wolfram wolfram-cloud"
 }
 
 profile_exists() {
@@ -93,7 +95,7 @@ expand_profile() {
         shell|networking|build-tools|core)
             echo "$1"
             ;;
-        latex|wolfram) echo "$1" ;;
+        latex|wolfram|wolfram-cloud) echo "$1" ;;
         *)
             echo "$1"
             ;;
@@ -413,9 +415,25 @@ RUN mkdir -p /home/claude/.WolframEngine/Licensing && chown -R claude:claude /ho
 EOF
 }
 
+get_profile_wolfram_cloud() {
+    # Installs wolframscript standalone (cloud mode) — no local engine needed (~10MB).
+    # Uses Wolfram Cloud for computation instead of a local kernel.
+    # First run: authenticate with your Wolfram ID (free account at wolfram.com/engine/free-license)
+    #   wolframscript -cloud -code "2+2"
+    cat << 'EOF'
+RUN DEBIAN_FRONTEND=noninteractive apt-get update && \
+    DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends curl && \
+    curl -L "https://account.wolfram.com/dl/WolframScript?platform=Linux" -o /tmp/wolframscript.deb && \
+    dpkg -i /tmp/wolframscript.deb && \
+    rm /tmp/wolframscript.deb && \
+    apt-get clean && rm -rf /var/lib/apt/lists/*
+RUN mkdir -p /home/claude/.WolframEngine/Licensing && chown -R claude:claude /home/claude/.WolframEngine
+EOF
+}
+
 export -f _read_ini get_profile_packages get_profile_description get_all_profile_names profile_exists expand_profile
 export -f get_profile_file_path read_config_value read_profile_section update_profile_section get_current_profiles
 export -f get_profile_core get_profile_build_tools get_profile_shell get_profile_networking get_profile_c get_profile_openwrt
 export -f get_profile_rust get_profile_python get_profile_go get_profile_flutter get_profile_javascript get_profile_java get_profile_ruby
 export -f get_profile_php get_profile_database get_profile_devops get_profile_web get_profile_embedded get_profile_datascience
-export -f get_profile_security get_profile_ml get_profile_latex get_profile_wolfram
+export -f get_profile_security get_profile_ml get_profile_latex get_profile_wolfram get_profile_wolfram_cloud
