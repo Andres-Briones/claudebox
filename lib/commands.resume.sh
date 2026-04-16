@@ -94,7 +94,17 @@ _cmd_resume() {
 
     while [ $# -gt 0 ]; do
         case "$1" in
-            -n) limit="$2"; shift 2 ;;
+            -n)
+                if [ -z "${2:-}" ]; then
+                    printf 'Error: -n requires a numeric argument\n' >&2
+                    return 1
+                fi
+                if ! printf '%s' "$2" | grep -qE '^[0-9]+$'; then
+                    printf 'Error: -n requires a numeric argument, got: %s\n' "$2" >&2
+                    return 1
+                fi
+                limit="$2"; shift 2
+                ;;
             -a) show_all=true; shift ;;
             -A|--all-projects) all_projects=true; shift ;;
             -d|--debug) debug=true; shift ;;
@@ -122,6 +132,14 @@ _cmd_resume() {
     if [ ! -d "$projects_dir" ]; then
         printf 'No claudebox projects found at %s\n' "$projects_dir" >&2
         return 1
+    fi
+
+    # Validate PROJECT_DIR when filtering to current project
+    if [ "$all_projects" != "true" ]; then
+        if [ -z "${PROJECT_DIR:-}" ]; then
+            printf 'Error: not in a claudebox project directory. Use -A to show all projects.\n' >&2
+            return 1
+        fi
     fi
 
     # Colors
@@ -289,7 +307,7 @@ _cmd_resume() {
             case "$dir_name" in
                 commands|allowlist|*.ini|*.sh|*.md) continue ;;
             esac
-            if grep -q "	${dir_name}	" "$sessions_file" 2>/dev/null; then
+            if grep -qF "	${dir_name}	" "$sessions_file" 2>/dev/null; then
                 continue
             fi
 
@@ -383,8 +401,8 @@ _cmd_resume() {
         local date_str size_h title desc display status status_display
         date_str=$(_resume_format_date "$mtime")
         size_h=$(_resume_human_size "$size")
-        title=$(grep "^${sid}	" "$titles_file" 2>/dev/null | head -1 | cut -f2- || true)
-        desc=$(grep "^${sid}	" "$desc_file" 2>/dev/null | head -1 | cut -f2- || true)
+        title=$(grep -F "${sid}	" "$titles_file" 2>/dev/null | head -1 | cut -f2- || true)
+        desc=$(grep -F "${sid}	" "$desc_file" 2>/dev/null | head -1 | cut -f2- || true)
 
         if [ -n "$title" ]; then
             display="${c_cyan}${title}${c_reset}"
@@ -459,6 +477,11 @@ _cmd_resume() {
 
             local resume_parent_dir="$projects_dir/$(generate_parent_folder_name "$project_path")"
             local source_jsonl="$resume_parent_dir/$slot_hash/.claude/projects/-workspace/${sid}.jsonl"
+
+            if [ ! -f "$source_jsonl" ]; then
+                printf 'Error: session file not found: %s\n' "$source_jsonl" >&2
+                return 1
+            fi
 
             # Find an idle slot
             local idle_hash="" idle_idx=""
