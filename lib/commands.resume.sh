@@ -4,16 +4,29 @@
 # Commands: resume
 # - resume: Pick and resume a session from any slot via fzf
 
+# Cache platform once at source time
+_RESUME_PLATFORM="$(uname -s)"
+
+# ============================================================================
 # Cross-platform helpers
+# ============================================================================
+
 _resume_get_mtime() {
-    case "$(uname -s)" in
+    case "$_RESUME_PLATFORM" in
         Darwin) stat -f %m "$1" 2>/dev/null || printf '0' ;;
         *)      stat -c %Y "$1" 2>/dev/null || printf '0' ;;
     esac
 }
 
+_resume_get_size() {
+    case "$_RESUME_PLATFORM" in
+        Darwin) stat -f %z "$1" 2>/dev/null || printf '0' ;;
+        *)      stat -c %s "$1" 2>/dev/null || printf '0' ;;
+    esac
+}
+
 _resume_format_date() {
-    case "$(uname -s)" in
+    case "$_RESUME_PLATFORM" in
         Darwin) date -r "$1" '+%Y-%m-%d %H:%M' 2>/dev/null || printf 'unknown' ;;
         *)      date -d "@$1" '+%Y-%m-%d %H:%M' 2>/dev/null || printf 'unknown' ;;
     esac
@@ -29,6 +42,10 @@ _resume_human_size() {
             printf \"%.1f%s\",s,u }"
     fi
 }
+
+# ============================================================================
+# Container / session status helpers
+# ============================================================================
 
 _resume_is_container_running() {
     local slot_hash="$1" ps_file="$2"
@@ -85,90 +102,13 @@ _resume_read_counter() {
     printf '%s' "$max"
 }
 
-_cmd_resume() {
-    # Parse arguments
-    local limit=50
-    local show_all=false
-    local all_projects=false
-    local debug=false
+# ============================================================================
+# Phase 1: Collect session descriptions from history.jsonl
+# ============================================================================
 
-    while [ $# -gt 0 ]; do
-        case "$1" in
-            -n)
-                if [ -z "${2:-}" ]; then
-                    printf 'Error: -n requires a numeric argument\n' >&2
-                    return 1
-                fi
-                if ! printf '%s' "$2" | grep -qE '^[0-9]+$'; then
-                    printf 'Error: -n requires a numeric argument, got: %s\n' "$2" >&2
-                    return 1
-                fi
-                limit="$2"; shift 2
-                ;;
-            -a) show_all=true; shift ;;
-            -A|--all-projects) all_projects=true; shift ;;
-            -d|--debug) debug=true; shift ;;
-            -h|--help)
-                printf 'Usage: claudebox resume [-n NUM] [-a] [-A] [-h]\n'
-                printf '  -n NUM   Pick from last NUM sessions (default: 50)\n'
-                printf '  -a       Show all sessions (no limit)\n'
-                printf '  -A       Show sessions from all projects (default: current directory only)\n'
-                printf '  -h       Show this help\n'
-                return 0
-                ;;
-            *) shift ;;  # ignore unknown flags (e.g. control flags passed by claudebox)
-        esac
-    done
+_resume_build_descriptions() {
+    local projects_dir="$1" desc_file="$2" debug="$3"
 
-    # Dependency checks
-    for dep in fzf jq docker; do
-        if ! command -v "$dep" >/dev/null 2>&1; then
-            printf 'Error: %s is required but not found in PATH\n' "$dep" >&2
-            return 1
-        fi
-    done
-
-    local projects_dir="$HOME/.claudebox/projects"
-    if [ ! -d "$projects_dir" ]; then
-        printf 'No claudebox projects found at %s\n' "$projects_dir" >&2
-        return 1
-    fi
-
-    # Validate PROJECT_DIR when filtering to current project
-    if [ "$all_projects" != "true" ]; then
-        if [ -z "${PROJECT_DIR:-}" ]; then
-            printf 'Error: not in a claudebox project directory. Use -A to show all projects.\n' >&2
-            return 1
-        fi
-    fi
-
-    # Colors
-    local c_reset c_green c_yellow c_cyan c_dim c_bold c_red
-    c_reset=$'\033[0m'
-    c_green=$'\033[32m'
-    c_yellow=$'\033[33m'
-    c_cyan=$'\033[36m'
-    c_dim=$'\033[2m'
-    c_bold=$'\033[1m'
-    c_red=$'\033[31m'
-
-    # Temp files
-    local tmpdir
-    tmpdir=$(mktemp -d)
-    # shellcheck disable=SC2064
-    trap "rm -rf '$tmpdir'" RETURN
-
-    local sessions_file="$tmpdir/sessions.tsv"
-    local desc_file="$tmpdir/desc.tsv"
-    local titles_file="$tmpdir/titles.tsv"
-    local docker_ps_file="$tmpdir/docker_ps.txt"
-
-    touch "$titles_file" "$desc_file"
-    docker ps --format '{{.Names}}' > "$docker_ps_file" 2>/dev/null || true
-
-    printf 'Scanning sessions...\n' >&2
-
-    # ---- Build descriptions from history.jsonl ----
     local parent_dir
     for parent_dir in "$projects_dir"/*/; do
         if [ ! -d "$parent_dir" ]; then
@@ -191,13 +131,64 @@ _cmd_resume() {
                 >> "$desc_file" || true
         done
     done
+    # Deduplicate — keep first occurrence per session
     if [ -s "$desc_file" ]; then
-        local tmp="$tmpdir/desc_dedup.tsv"
+        local tmp="${desc_file}.dedup"
         awk -F'\t' '!seen[$1]++' "$desc_file" > "$tmp"
         mv "$tmp" "$desc_file"
     fi
+}
 
-    # ---- Discover sessions ----
+# ============================================================================
+# Phase 2: Discover sessions across project slots
+# ============================================================================
+
+# Scan a single slot directory for session .jsonl files
+_resume_scan_workspace() {
+    local slot_dir="$1" slot_id="$2" slot_idx="$3" project_path="$4" project_name="$5"
+    local running="$6" docker_ps_file="$7" sessions_file="$8" titles_file="$9"
+    local ws_dir="$slot_dir/.claude/projects/-workspace"
+
+    local f
+    for f in "$ws_dir"/*.jsonl; do
+        if [ ! -f "$f" ]; then
+            continue
+        fi
+        case "$f" in */subagents/*) continue ;; esac
+
+        local sid mtime size
+        sid=$(basename "$f" .jsonl)
+        mtime=$(_resume_get_mtime "$f")
+        size=$(_resume_get_size "$f")
+
+        if [ "$size" -lt 5000 ] 2>/dev/null; then
+            continue
+        fi
+
+        # Extract custom title
+        local title
+        title=$(jq -r 'select(.type == "custom-title") | .customTitle' "$f" 2>/dev/null | tail -1)
+        if [ -n "$title" ]; then
+            printf '%s\t%s\n' "$sid" "$title" >> "$titles_file"
+        fi
+
+        local active="false"
+        if [ "$running" = "true" ]; then
+            if _resume_is_session_active "$slot_dir" "$sid" "$slot_id" "$docker_ps_file"; then
+                active="true"
+            fi
+        fi
+
+        printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' \
+            "$mtime" "$sid" "$slot_id" "$slot_idx" "$project_path" "$project_name" "$size" "$running" "$active" \
+            >> "$sessions_file"
+    done
+}
+
+_resume_discover_sessions() {
+    local projects_dir="$1" all_projects="$2" debug="$3"
+    local sessions_file="$4" titles_file="$5" docker_ps_file="$6"
+
     local current_parent_name=""
     if [ "$all_projects" != "true" ]; then
         current_parent_name=$(generate_parent_folder_name "$PROJECT_DIR")
@@ -206,6 +197,7 @@ _cmd_resume() {
         fi
     fi
 
+    local parent_dir
     for parent_dir in "$projects_dir"/*/; do
         if [ ! -d "$parent_dir" ]; then
             continue
@@ -260,40 +252,9 @@ _cmd_resume() {
                 running="true"
             fi
 
-            local f
-            for f in "$ws_dir"/*.jsonl; do
-                if [ ! -f "$f" ]; then
-                    continue
-                fi
-                case "$f" in */subagents/*) continue ;; esac
-
-                local sid mtime size
-                sid=$(basename "$f" .jsonl)
-                mtime=$(_resume_get_mtime "$f")
-                size=$(stat -c %s "$f" 2>/dev/null || stat -f %z "$f" 2>/dev/null || printf '0')
-
-                if [ "$size" -lt 5000 ] 2>/dev/null; then
-                    continue
-                fi
-
-                # Extract custom title
-                local title
-                title=$(jq -r 'select(.type == "custom-title") | .customTitle' "$f" 2>/dev/null | tail -1)
-                if [ -n "$title" ]; then
-                    printf '%s\t%s\n' "$sid" "$title" >> "$titles_file"
-                fi
-
-                local active="false"
-                if [ "$running" = "true" ]; then
-                    if _resume_is_session_active "$slot_dir" "$sid" "$slot_hash" "$docker_ps_file"; then
-                        active="true"
-                    fi
-                fi
-
-                printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' \
-                    "$mtime" "$sid" "$slot_hash" "$idx" "$project_path" "$project_name" "$size" "$running" "$active" \
-                    >> "$sessions_file"
-            done
+            _resume_scan_workspace "$slot_dir" "$slot_hash" "$idx" \
+                "$project_path" "$project_name" "$running" \
+                "$docker_ps_file" "$sessions_file" "$titles_file"
         done
 
         # Fallback: scan slot dirs not matched by CRC32 chain
@@ -335,53 +296,33 @@ _cmd_resume() {
                 running="true"
             fi
 
-            local f
-            for f in "$ws_dir"/*.jsonl; do
-                if [ ! -f "$f" ]; then
-                    continue
-                fi
-                case "$f" in */subagents/*) continue ;; esac
-
-                local sid mtime size
-                sid=$(basename "$f" .jsonl)
-                mtime=$(_resume_get_mtime "$f")
-                size=$(stat -c %s "$f" 2>/dev/null || stat -f %z "$f" 2>/dev/null || printf '0')
-
-                if [ "$size" -lt 5000 ] 2>/dev/null; then
-                    continue
-                fi
-
-                local title
-                title=$(jq -r 'select(.type == "custom-title") | .customTitle' "$f" 2>/dev/null | tail -1)
-                if [ -n "$title" ]; then
-                    printf '%s\t%s\n' "$sid" "$title" >> "$titles_file"
-                fi
-
-                local active="false"
-                if [ "$running" = "true" ]; then
-                    if _resume_is_session_active "$slot_dir" "$sid" "$dir_name" "$docker_ps_file"; then
-                        active="true"
-                    fi
-                fi
-
-                printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' \
-                    "$mtime" "$sid" "$dir_name" "$found_idx" "$project_path" "$project_name" "$size" "$running" "$active" \
-                    >> "$sessions_file"
-            done
+            _resume_scan_workspace "$slot_dir" "$dir_name" "$found_idx" \
+                "$project_path" "$project_name" "$running" \
+                "$docker_ps_file" "$sessions_file" "$titles_file"
         done
     done
+}
 
-    # ---- Check results ----
-    if [ ! -s "$sessions_file" ]; then
-        printf 'No sessions found.\n' >&2
-        return 0
-    fi
+# ============================================================================
+# Phase 3: Build fzf input from discovered sessions
+# ============================================================================
 
-    # ---- Build fzf input ----
-    local fzf_file="$tmpdir/fzf_input.tsv"
+_resume_build_fzf_input() {
+    local sessions_file="$1" titles_file="$2" desc_file="$3"
+    local fzf_file="$4" tmpdir="$5" limit="$6" show_all="$7"
 
+    # Colors (local to avoid leaking)
+    local c_reset c_yellow c_cyan c_dim c_red
+    c_reset=$'\033[0m'
+    c_yellow=$'\033[33m'
+    c_cyan=$'\033[36m'
+    c_dim=$'\033[2m'
+    c_red=$'\033[31m'
+
+    # Sort by mtime desc, dedup by session_id
     sort -t$'\t' -k1,1rn "$sessions_file" | awk -F'\t' '!seen[$2]++' > "$tmpdir/sorted.tsv"
 
+    # Apply limit
     if [ "$show_all" = "true" ]; then
         cp "$tmpdir/sorted.tsv" "$tmpdir/limited.tsv"
     else
@@ -389,8 +330,7 @@ _cmd_resume() {
     fi
 
     if [ ! -s "$tmpdir/limited.tsv" ]; then
-        printf 'No sessions found.\n' >&2
-        return 0
+        return 1
     fi
 
     while IFS=$'\t' read -r mtime sid slot_hash slot_idx project_path project_name size running active; do
@@ -432,39 +372,24 @@ _cmd_resume() {
             >> "$fzf_file"
     done < "$tmpdir/limited.tsv"
 
-    if [ ! -s "$fzf_file" ]; then
-        printf 'No sessions found.\n' >&2
-        return 0
-    fi
+    [ -s "$fzf_file" ]
+}
 
-    # ---- fzf picker ----
-    local header
-    header=$(printf '%s  %6s  %-6s  %-12s  %-4s  %s' \
-        "DATE            " "SIZE" "STATUS" "PROJECT" "SLOT" "DESCRIPTION")
+# ============================================================================
+# Phase 4: Resume the selected session
+# ============================================================================
 
-    local selection
-    selection=$(cat "$fzf_file" | fzf \
-        --ansi \
-        --header="${c_bold}${header}${c_reset}" \
-        --no-multi \
-        --tac \
-        --no-sort \
-        --delimiter=$'\t' \
-        --with-nth=1 \
-        --tabstop=4 \
-        --bind='esc:abort' \
-        --prompt='Resume session > ' \
-    ) || return 0
+_resume_execute() {
+    local sid="$1" slot_hash="$2" slot_idx="$3" project_path="$4" status="$5"
+    local projects_dir="$6" docker_ps_file="$7"
 
-    # ---- Extract selection ----
-    local sid slot_hash slot_idx project_path status
-    sid=$(printf '%s' "$selection" | cut -f2)
-    slot_hash=$(printf '%s' "$selection" | cut -f3)
-    slot_idx=$(printf '%s' "$selection" | cut -f4)
-    project_path=$(printf '%s' "$selection" | cut -f5)
-    status=$(printf '%s' "$selection" | cut -f6)
+    local c_reset c_green c_yellow c_bold c_red
+    c_reset=$'\033[0m'
+    c_green=$'\033[32m'
+    c_yellow=$'\033[33m'
+    c_bold=$'\033[1m'
+    c_red=$'\033[31m'
 
-    # ---- Resume logic ----
     case "$status" in
         ACTIVE)
             printf '%s%sThis session is currently active in slot #%s%s\n' "$c_bold" "$c_red" "$slot_idx" "$c_reset" >&2
@@ -487,6 +412,7 @@ _cmd_resume() {
             local idle_hash="" idle_idx=""
             local resume_max
             resume_max=$(_resume_read_counter "$resume_parent_dir")
+            local idx
             for ((idx=1; idx<=resume_max; idx++)); do
                 local hash
                 hash=$(generate_container_name "$project_path" "$idx")
@@ -524,7 +450,6 @@ _cmd_resume() {
     printf '%sResuming session in slot #%s...%s\n' "$c_green" "$slot_idx" "$c_reset" >&2
 
     cd "$project_path"
-    # Use run_claudebox_container if available, otherwise fall back to claudebox CLI
     local parent_folder_name
     parent_folder_name=$(generate_parent_folder_name "$project_path")
     local slot_name
@@ -540,7 +465,139 @@ _cmd_resume() {
     run_claudebox_container "$container_name" "interactive" --resume "$sid"
 }
 
+# ============================================================================
+# Main command entry point
+# ============================================================================
+
+_cmd_resume() {
+    # ---- Parse arguments ----
+    local limit=50
+    local show_all=false
+    local all_projects=false
+    local debug=false
+
+    while [ $# -gt 0 ]; do
+        case "$1" in
+            -n)
+                if [ -z "${2:-}" ]; then
+                    printf 'Error: -n requires a numeric argument\n' >&2
+                    return 1
+                fi
+                if ! printf '%s' "$2" | grep -qE '^[0-9]+$'; then
+                    printf 'Error: -n requires a numeric argument, got: %s\n' "$2" >&2
+                    return 1
+                fi
+                limit="$2"; shift 2
+                ;;
+            -a) show_all=true; shift ;;
+            -A|--all-projects) all_projects=true; shift ;;
+            -d|--debug) debug=true; shift ;;
+            -h|--help)
+                printf 'Usage: claudebox resume [-n NUM] [-a] [-A] [-h]\n'
+                printf '  -n NUM   Pick from last NUM sessions (default: 50)\n'
+                printf '  -a       Show all sessions (no limit)\n'
+                printf '  -A       Show sessions from all projects (default: current directory only)\n'
+                printf '  -h       Show this help\n'
+                return 0
+                ;;
+            *) shift ;;  # ignore unknown flags (e.g. control flags passed by claudebox)
+        esac
+    done
+
+    # ---- Dependency checks ----
+    local dep
+    for dep in fzf jq docker; do
+        if ! command -v "$dep" >/dev/null 2>&1; then
+            printf 'Error: %s is required but not found in PATH\n' "$dep" >&2
+            return 1
+        fi
+    done
+
+    local projects_dir="$HOME/.claudebox/projects"
+    if [ ! -d "$projects_dir" ]; then
+        printf 'No claudebox projects found at %s\n' "$projects_dir" >&2
+        return 1
+    fi
+
+    if [ "$all_projects" != "true" ]; then
+        if [ -z "${PROJECT_DIR:-}" ]; then
+            printf 'Error: not in a claudebox project directory. Use -A to show all projects.\n' >&2
+            return 1
+        fi
+    fi
+
+    # ---- Temp files ----
+    local tmpdir
+    tmpdir=$(mktemp -d)
+    # shellcheck disable=SC2064
+    trap "rm -rf '$tmpdir'" RETURN
+
+    local sessions_file="$tmpdir/sessions.tsv"
+    local desc_file="$tmpdir/desc.tsv"
+    local titles_file="$tmpdir/titles.tsv"
+    local docker_ps_file="$tmpdir/docker_ps.txt"
+    local fzf_file="$tmpdir/fzf_input.tsv"
+
+    touch "$titles_file" "$desc_file"
+    docker ps --format '{{.Names}}' > "$docker_ps_file" 2>/dev/null || true
+
+    printf 'Scanning sessions...\n' >&2
+
+    # ---- Run phases ----
+    _resume_build_descriptions "$projects_dir" "$desc_file" "$debug"
+
+    _resume_discover_sessions "$projects_dir" "$all_projects" "$debug" \
+        "$sessions_file" "$titles_file" "$docker_ps_file"
+
+    if [ ! -s "$sessions_file" ]; then
+        printf 'No sessions found.\n' >&2
+        return 0
+    fi
+
+    if ! _resume_build_fzf_input "$sessions_file" "$titles_file" "$desc_file" \
+            "$fzf_file" "$tmpdir" "$limit" "$show_all"; then
+        printf 'No sessions found.\n' >&2
+        return 0
+    fi
+
+    # ---- fzf picker ----
+    local c_bold c_reset
+    c_bold=$'\033[1m'
+    c_reset=$'\033[0m'
+
+    local header
+    header=$(printf '%s  %6s  %-6s  %-12s  %-4s  %s' \
+        "DATE            " "SIZE" "STATUS" "PROJECT" "SLOT" "DESCRIPTION")
+
+    local selection
+    selection=$(cat "$fzf_file" | fzf \
+        --ansi \
+        --header="${c_bold}${header}${c_reset}" \
+        --no-multi \
+        --tac \
+        --no-sort \
+        --delimiter=$'\t' \
+        --with-nth=1 \
+        --tabstop=4 \
+        --bind='esc:abort' \
+        --prompt='Resume session > ' \
+    ) || return 0
+
+    # ---- Extract selection and resume ----
+    local sid slot_hash slot_idx project_path status
+    sid=$(printf '%s' "$selection" | cut -f2)
+    slot_hash=$(printf '%s' "$selection" | cut -f3)
+    slot_idx=$(printf '%s' "$selection" | cut -f4)
+    project_path=$(printf '%s' "$selection" | cut -f5)
+    status=$(printf '%s' "$selection" | cut -f6)
+
+    _resume_execute "$sid" "$slot_hash" "$slot_idx" "$project_path" "$status" \
+        "$projects_dir" "$docker_ps_file"
+}
+
 export -f _cmd_resume
-export -f _resume_get_mtime _resume_format_date _resume_human_size
+export -f _resume_get_mtime _resume_get_size _resume_format_date _resume_human_size
 export -f _resume_is_container_running _resume_get_container_name _resume_is_session_active
 export -f _resume_read_counter
+export -f _resume_build_descriptions _resume_discover_sessions _resume_scan_workspace
+export -f _resume_build_fzf_input _resume_execute
