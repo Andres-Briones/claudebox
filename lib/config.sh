@@ -403,9 +403,10 @@ RUN DEBIAN_FRONTEND=noninteractive apt-get update && \
     DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends xz-utils curl && \
     apt-get clean && rm -rf /var/lib/apt/lists/*
 RUN curl -L "https://account.wolfram.com/dl/WolframEngine?platform=Linux" -o /tmp/LINUX && \
-    sed -i 's|/dev/tty|/dev/stdin|g' /tmp/LINUX && \
-    bash /tmp/LINUX -- -auto -execdir=/usr/local/bin -verbose < /dev/null && \
-    rm /tmp/LINUX
+    chmod +x /tmp/LINUX && \
+    ln -sf /dev/null /dev/tty && \
+    /tmp/LINUX -- -auto -execdir=/usr/local/bin -verbose && \
+    rm -f /tmp/LINUX
 RUN mkdir -p /home/claude/.WolframEngine/Licensing && chown -R claude:claude /home/claude/.WolframEngine
 EOF
 }
