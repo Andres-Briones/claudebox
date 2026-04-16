@@ -106,7 +106,7 @@ _cmd_resume() {
                 printf '  -h       Show this help\n'
                 return 0
                 ;;
-            *) printf 'Unknown option: %s\n' "$1" >&2; return 1 ;;
+            *) shift ;;  # ignore unknown flags (e.g. control flags passed by claudebox)
         esac
     done
 
