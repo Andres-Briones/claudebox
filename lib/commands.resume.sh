@@ -574,7 +574,7 @@ _cmd_resume() {
         --ansi \
         --header="${c_bold}${header}${c_reset}" \
         --no-multi \
-        --tac \
+        --layout=reverse \
         --no-sort \
         --delimiter=$'\t' \
         --with-nth=1 \
