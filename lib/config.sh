@@ -402,7 +402,7 @@ get_profile_wolfram() {
 RUN DEBIAN_FRONTEND=noninteractive apt-get update && \
     DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends xz-utils curl && \
     apt-get clean && rm -rf /var/lib/apt/lists/*
-RUN curl -L "https://account.wolfram.com/download/public/wolfram-engine/desktop/LINUX" -o /tmp/LINUX && \
+RUN curl -L "https://account.wolfram.com/dl/WolframEngine?platform=Linux" -o /tmp/LINUX && \
     bash /tmp/LINUX -- -auto -execdir=/usr/local/bin -verbose && \
     rm /tmp/LINUX
 RUN mkdir -p /home/claude/.WolframEngine/Licensing && chown -R claude:claude /home/claude/.WolframEngine
