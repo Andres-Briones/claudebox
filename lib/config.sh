@@ -404,7 +404,7 @@ RUN DEBIAN_FRONTEND=noninteractive apt-get update && \
     apt-get clean && rm -rf /var/lib/apt/lists/*
 RUN curl -L "https://account.wolfram.com/dl/WolframEngine?platform=Linux" -o /tmp/WolframEngine.sh && \
     chmod +x /tmp/WolframEngine.sh && \
-    /tmp/WolframEngine.sh -- -auto -verbose && \
+    yes | /tmp/WolframEngine.sh -- -auto -execdir=/usr/local/bin -verbose < /dev/null && \
     WDIR=$(find /usr/local/Wolfram -name "WolframKernel" -type f 2>/dev/null | head -1) && \
     WDIR=$(dirname "$WDIR") && \
     ln -sf "$WDIR/math" /usr/local/bin/math && \
