@@ -52,7 +52,7 @@ check_prerequisites() {
 
     # Packages whose binaries live in /usr/sbin (not in regular user PATH)
     # or have no single binary to test — use dpkg-query for reliable status
-    for pkg in iptables dbus-user-session; do
+    for pkg in iptables dbus-user-session fuse-overlayfs; do
         if ! dpkg-query -W -f='${Status}' "$pkg" 2>/dev/null | grep -q 'install ok installed'; then
             missing_pkgs+=("$pkg")
         fi
@@ -99,13 +99,14 @@ install_rootless_docker() {
         curl -fsSL https://get.docker.com/rootless | FORCE_ROOTLESS_INSTALL=1 sh
     fi
 
-    # Use vfs storage driver — overlay2 fails in rootless mode on many filesystems
-    # with "invalid rootfs: not an absolute path, or a symlink"
+    # Use fuse-overlayfs storage driver — overlay2 fails in rootless mode on many
+    # filesystems, and vfs copies every layer in full (massive disk usage).
+    # fuse-overlayfs gives proper layer sharing in user namespaces.
     local daemon_json="$HOME/.config/docker/daemon.json"
     if [[ ! -f "$daemon_json" ]]; then
         mkdir -p "$HOME/.config/docker"
-        printf '{"storage-driver": "vfs"}\n' > "$daemon_json"
-        log "Configured vfs storage driver for rootless Docker"
+        printf '{"storage-driver": "fuse-overlayfs"}\n' > "$daemon_json"
+        log "Configured fuse-overlayfs storage driver for rootless Docker"
     fi
 
     # Symlink docker into ~/.local/bin so it's on the same PATH as claudebox
