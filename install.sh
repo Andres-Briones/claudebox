@@ -175,26 +175,26 @@ export DOCKER_HOST="unix:///run/user/$(id -u)/docker.sock"'
 
 # ------------------------------------------------ install claudebox from fork --
 install_claudebox() {
-    log "Installing ClaudeBox from ${CLAUDEBOX_REPO}"
+    local source_dir="$INSTALL_DIR/source"
 
-    local tmp_dir=""
-    tmp_dir="$(mktemp -d)"
-    trap 'rm -rf "${tmp_dir:-}"' EXIT
+    if [[ -d "$source_dir/.git" ]]; then
+        log "Updating ClaudeBox from ${CLAUDEBOX_REPO}"
+        git -C "$source_dir" pull --ff-only
+    else
+        log "Installing ClaudeBox from ${CLAUDEBOX_REPO}"
+        # Remove old non-git install if present
+        if [[ -d "$source_dir" ]]; then
+            rm -rf "$source_dir"
+        fi
+        mkdir -p "$INSTALL_DIR"
+        git clone --branch "$CLAUDEBOX_BRANCH" "$CLAUDEBOX_REPO" "$source_dir"
+    fi
 
-    git clone --depth 1 --branch "$CLAUDEBOX_BRANCH" "$CLAUDEBOX_REPO" "$tmp_dir/claudebox"
+    # Create symlink
+    mkdir -p "$HOME/.local/bin"
+    ln -sf "$source_dir/main.sh" "$HOME/.local/bin/claudebox"
 
-    cd "$tmp_dir/claudebox"
-
-    # Build the .run installer
-    log "Building ClaudeBox installer"
-    bash .builder/build.sh
-
-    # Run the installer
-    log "Running ClaudeBox installer"
-    bash dist/claudebox.run
-
-    cd -
-    log "ClaudeBox installed to ${INSTALL_DIR}"
+    log "ClaudeBox installed to ${source_dir}"
 }
 
 # ------------------------------------------------------------ verify install --
