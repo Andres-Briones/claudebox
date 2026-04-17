@@ -288,7 +288,14 @@ uninstall() {
     log "Uninstalling ClaudeBox + Rootless Docker"
     printf '\n'
 
-    # 1. Stop rootless Docker daemon
+    # 1. Clean up Docker data while daemon is still running
+    if command -v docker >/dev/null 2>&1 && docker info >/dev/null 2>&1; then
+        log "Removing all Docker containers, images, and volumes"
+        docker rm -f $(docker ps -aq) 2>/dev/null || true
+        docker system prune -af --volumes 2>/dev/null || true
+    fi
+
+    # 2. Stop rootless Docker daemon
     if systemctl --user is-active docker >/dev/null 2>&1; then
         log "Stopping rootless Docker daemon"
         systemctl --user stop docker
