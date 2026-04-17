@@ -304,15 +304,21 @@ uninstall() {
         systemctl --user disable docker
     fi
 
-    # 2. Remove rootless Docker binaries
+    # 2. Remove rootless Docker binaries from ~/bin
+    local docker_bins=(
+        docker dockerd dockerd-rootless.sh dockerd-rootless-setuptool.sh
+        rootlesskit rootlesskit-docker-proxy
+        containerd containerd-shim-runc-v2
+        ctr runc vpnkit
+        docker-init docker-proxy
+        slirp4netns bypass4netns bypass4netnsd
+    )
     if [[ -d "$HOME/bin" ]]; then
         log "Removing rootless Docker binaries from ~/bin"
-        rm -f "$HOME/bin/dockerd" "$HOME/bin/docker" "$HOME/bin/dockerd-rootless.sh"
-        rm -f "$HOME/bin/rootlesskit" "$HOME/bin/rootlesskit-docker-proxy"
-        rm -f "$HOME/bin/containerd" "$HOME/bin/containerd-shim-runc-v2"
-        rm -f "$HOME/bin/ctr" "$HOME/bin/runc" "$HOME/bin/vpnkit"
-        rm -f "$HOME/bin/docker-init" "$HOME/bin/docker-proxy"
-        # Remove ~/bin if empty
+        for bin in "${docker_bins[@]}"; do
+            rm -f "$HOME/bin/$bin"
+        done
+        # Remove ~/bin only if empty (user may have their own files there)
         rmdir "$HOME/bin" 2>/dev/null || true
     fi
 
@@ -350,7 +356,21 @@ uninstall() {
         rm -rf "$HOME/.claudebox"
     fi
 
-    # 6. Remove shell config
+    # 6. Optionally remove Claude CLI config
+    if [[ -d "$HOME/.claude" ]]; then
+        printf '\n'
+        warn "~/.claude contains Claude CLI settings, credentials, and conversation history."
+        printf 'Remove ~/.claude? [y/N] '
+        read -r response </dev/tty
+        if [[ "$response" =~ ^[Yy]$ ]]; then
+            log "Removing Claude CLI config (~/.claude)"
+            rm -rf "$HOME/.claude"
+        else
+            log "Keeping ~/.claude"
+        fi
+    fi
+
+    # 7. Remove shell config
     remove_shell_config "$HOME/.bashrc"
     remove_shell_config "$HOME/.zshrc"
     remove_shell_config "$HOME/.profile"
