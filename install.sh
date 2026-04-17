@@ -99,6 +99,15 @@ install_rootless_docker() {
         curl -fsSL https://get.docker.com/rootless | FORCE_ROOTLESS_INSTALL=1 sh
     fi
 
+    # Use vfs storage driver — overlay2 fails in rootless mode on many filesystems
+    # with "invalid rootfs: not an absolute path, or a symlink"
+    local daemon_json="$HOME/.config/docker/daemon.json"
+    if [[ ! -f "$daemon_json" ]]; then
+        mkdir -p "$HOME/.config/docker"
+        printf '{"storage-driver": "vfs"}\n' > "$daemon_json"
+        log "Configured vfs storage driver for rootless Docker"
+    fi
+
     # Symlink docker into ~/.local/bin so it's on the same PATH as claudebox
     # (~/bin is rootless Docker's default but isn't always in PATH)
     mkdir -p "$HOME/.local/bin"
