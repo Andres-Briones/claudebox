@@ -81,12 +81,11 @@ check_prerequisites() {
 # --------------------------------------------------- install rootless Docker --
 install_rootless_docker() {
     if [[ -x "$HOME/bin/dockerd" ]]; then
-        log "Rootless Docker already installed at ~/bin/dockerd, skipping"
-        return 0
+        log "Rootless Docker already installed at ~/bin/dockerd, skipping download"
+    else
+        log "Installing rootless Docker"
+        curl -fsSL https://get.docker.com/rootless | FORCE_ROOTLESS_INSTALL=1 sh
     fi
-
-    log "Installing rootless Docker"
-    curl -fsSL https://get.docker.com/rootless | FORCE_ROOTLESS_INSTALL=1 sh
 
     # Symlink docker into ~/.local/bin so it's on the same PATH as claudebox
     # (~/bin is rootless Docker's default but isn't always in PATH)
@@ -97,7 +96,7 @@ install_rootless_docker() {
         fi
     done
 
-    log "Rootless Docker installed"
+    log "Rootless Docker ready"
 }
 
 # ----------------------------------------------------------- install buildx --
