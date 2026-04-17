@@ -25,12 +25,11 @@ check_prerequisites() {
 
     local missing_pkgs=()
 
-    # Required commands and the packages that provide them
+    # Commands in the user's PATH
     local -A cmd_to_pkg=(
         [curl]="curl"
         [git]="git"
         [newuidmap]="uidmap"
-        [iptables]="iptables"
     )
 
     for cmd in "${!cmd_to_pkg[@]}"; do
@@ -39,10 +38,13 @@ check_prerequisites() {
         fi
     done
 
-    # Check for dbus-user-session (no binary to test, check dpkg)
-    if ! dpkg -l dbus-user-session >/dev/null 2>&1; then
-        missing_pkgs+=("dbus-user-session")
-    fi
+    # Packages whose binaries live in /usr/sbin (not in regular user PATH)
+    # or have no single binary to test — check via dpkg instead
+    for pkg in iptables dbus-user-session; do
+        if ! dpkg -l "$pkg" 2>/dev/null | grep -q '^ii'; then
+            missing_pkgs+=("$pkg")
+        fi
+    done
 
     if [[ ${#missing_pkgs[@]} -gt 0 ]]; then
         printf '\n'
