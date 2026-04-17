@@ -215,6 +215,9 @@ export DOCKER_HOST="unix:///run/user/$(id -u)/docker.sock"'
 
 # ------------------------------------------------ install claudebox from fork --
 install_claudebox() {
+    # Ensure a valid working directory (previous uninstall may have deleted cwd)
+    cd "$HOME"
+
     local source_dir="$INSTALL_DIR/source"
 
     if [[ -d "$source_dir/.git" ]]; then
