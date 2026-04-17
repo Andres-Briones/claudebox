@@ -420,6 +420,29 @@ run_claudebox_container() {
         docker_args+=("${container_args[@]}")
     fi
     
+    # Check permissions for rootless Docker
+    # In rootless mode, the container's claude user (UID 1000) maps to a
+    # subordinate UID on the host that cannot write to host-owned directories.
+    if docker info 2>/dev/null | grep -q rootless; then
+        local needs_chmod=false
+        if [[ ! -w "$PROJECT_DIR" ]] || ! stat -c '%a' "$PROJECT_DIR" 2>/dev/null | grep -q '7$'; then
+            needs_chmod=true
+        fi
+        if [[ "$needs_chmod" == "true" ]]; then
+            warn "Rootless Docker detected. The project directory needs open permissions"
+            warn "for the container's user to write files."
+            printf '\n'
+            printf '  Run: chmod -R 777 %s\n' "$PROJECT_DIR"
+            printf '\n'
+            printf 'Fix permissions now? [Y/n] '
+            read -r response
+            if [[ ! "$response" =~ ^[Nn]$ ]]; then
+                chmod -R 777 "$PROJECT_DIR"
+                success "Permissions fixed"
+            fi
+        fi
+    fi
+
     # Run the container
     if [[ "$VERBOSE" == "true" ]]; then
         echo "[DEBUG] Docker run command: docker run ${docker_args[*]}" >&2
