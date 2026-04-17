@@ -88,6 +88,15 @@ install_rootless_docker() {
     log "Installing rootless Docker"
     curl -fsSL https://get.docker.com/rootless | FORCE_ROOTLESS_INSTALL=1 sh
 
+    # Symlink docker into ~/.local/bin so it's on the same PATH as claudebox
+    # (~/bin is rootless Docker's default but isn't always in PATH)
+    mkdir -p "$HOME/.local/bin"
+    for bin in docker dockerd; do
+        if [[ -x "$HOME/bin/$bin" ]] && [[ ! -e "$HOME/.local/bin/$bin" ]]; then
+            ln -s "$HOME/bin/$bin" "$HOME/.local/bin/$bin"
+        fi
+    done
+
     log "Rootless Docker installed"
 }
 
