@@ -221,8 +221,81 @@ verify() {
     fi
 }
 
+# ----------------------------------------------------------------- uninstall --
+remove_shell_config() {
+    local file="$1"
+    if [[ -f "$file" ]] && grep -q 'added by install-claudebox.sh' "$file" 2>/dev/null; then
+        log "Removing rootless Docker config from ${file}"
+        sed -i '/# --- Rootless Docker (added by install-claudebox.sh) ---/,/^export DOCKER_HOST=/d' "$file"
+        # Clean up any trailing blank lines left behind
+        sed -i -e :a -e '/^\n*$/{$d;N;ba' -e '}' "$file"
+    fi
+}
+
+uninstall() {
+    printf '\n'
+    log "Uninstalling ClaudeBox + Rootless Docker"
+    printf '\n'
+
+    # 1. Stop rootless Docker daemon
+    if systemctl --user is-active docker >/dev/null 2>&1; then
+        log "Stopping rootless Docker daemon"
+        systemctl --user stop docker
+    fi
+    if systemctl --user is-enabled docker >/dev/null 2>&1; then
+        systemctl --user disable docker
+    fi
+
+    # 2. Remove rootless Docker binaries
+    if [[ -d "$HOME/bin" ]]; then
+        log "Removing rootless Docker binaries from ~/bin"
+        rm -f "$HOME/bin/dockerd" "$HOME/bin/docker" "$HOME/bin/dockerd-rootless.sh"
+        rm -f "$HOME/bin/rootlesskit" "$HOME/bin/rootlesskit-docker-proxy"
+        rm -f "$HOME/bin/containerd" "$HOME/bin/containerd-shim-runc-v2"
+        rm -f "$HOME/bin/ctr" "$HOME/bin/runc" "$HOME/bin/vpnkit"
+        rm -f "$HOME/bin/docker-init" "$HOME/bin/docker-proxy"
+        # Remove ~/bin if empty
+        rmdir "$HOME/bin" 2>/dev/null || true
+    fi
+
+    # 3. Remove symlinks from ~/.local/bin
+    log "Removing symlinks from ~/.local/bin"
+    rm -f "$HOME/.local/bin/docker" "$HOME/.local/bin/dockerd"
+    rm -f "$HOME/.local/bin/claudebox"
+
+    # 4. Remove Docker data and config
+    if [[ -d "$HOME/.local/share/docker" ]]; then
+        log "Removing Docker data (~/.local/share/docker)"
+        rm -rf "$HOME/.local/share/docker"
+    fi
+    if [[ -d "$HOME/.docker" ]]; then
+        log "Removing Docker config (~/.docker)"
+        rm -rf "$HOME/.docker"
+    fi
+
+    # 5. Remove ClaudeBox
+    if [[ -d "$HOME/.claudebox" ]]; then
+        log "Removing ClaudeBox (~/.claudebox)"
+        rm -rf "$HOME/.claudebox"
+    fi
+
+    # 6. Remove shell config
+    remove_shell_config "$HOME/.bashrc"
+    remove_shell_config "$HOME/.zshrc"
+    remove_shell_config "$HOME/.profile"
+
+    printf '\n'
+    log "Uninstall complete. Log out and back in to clear environment."
+    printf '\n'
+}
+
 # --------------------------------------------------------------------- main --
 main() {
+    if [[ "${1:-}" == "--uninstall" ]]; then
+        uninstall
+        return 0
+    fi
+
     printf '\n'
     log "ClaudeBox + Rootless Docker Installer (Debian 12)"
     printf '\n'
