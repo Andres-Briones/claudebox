@@ -19,6 +19,18 @@ check_command() {
     fi
 }
 
+# ------------------------------------------------------------ distro check --
+check_distro() {
+    if [[ ! -f /etc/os-release ]]; then
+        die "Cannot detect OS. This script only supports Debian and Ubuntu."
+    fi
+    . /etc/os-release
+    case "${ID:-}" in
+        debian|ubuntu) ;;
+        *) die "Unsupported distro: ${ID:-unknown}. This script only supports Debian and Ubuntu." ;;
+    esac
+}
+
 # -------------------------------------------------------- prerequisite check --
 check_prerequisites() {
     log "Checking prerequisites"
@@ -50,7 +62,7 @@ check_prerequisites() {
         printf '\n'
         warn "Missing system packages. Ask your admin to run:"
         printf '\n'
-        printf '  sudo apt-get install %s\n' "${missing_pkgs[*]}"
+        printf '  apt-get install %s\n' "${missing_pkgs[*]}"
         printf '\n'
         die "Cannot continue without the packages above."
     fi
@@ -62,7 +74,7 @@ check_prerequisites() {
         printf '\n'
         warn "No subordinate UID range for $user. Ask your admin to run:"
         printf '\n'
-        printf '  sudo usermod --add-subuids 100000-165535 --add-subgids 100000-165535 %s\n' "$user"
+        printf '  usermod --add-subuids 100000-165535 --add-subgids 100000-165535 %s\n' "$user"
         printf '\n'
         die "Cannot continue without subordinate UID/GID ranges."
     fi
@@ -70,7 +82,7 @@ check_prerequisites() {
         printf '\n'
         warn "No subordinate GID range for $user. Ask your admin to run:"
         printf '\n'
-        printf '  sudo usermod --add-subuids 100000-165535 --add-subgids 100000-165535 %s\n' "$user"
+        printf '  usermod --add-subuids 100000-165535 --add-subgids 100000-165535 %s\n' "$user"
         printf '\n'
         die "Cannot continue without subordinate UID/GID ranges."
     fi
@@ -297,9 +309,10 @@ main() {
     fi
 
     printf '\n'
-    log "ClaudeBox + Rootless Docker Installer (Debian 12)"
+    log "ClaudeBox + Rootless Docker Installer (Debian/Ubuntu)"
     printf '\n'
 
+    check_distro
     check_prerequisites
     install_rootless_docker
     configure_shell
