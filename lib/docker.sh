@@ -420,47 +420,28 @@ run_claudebox_container() {
         docker_args+=("${container_args[@]}")
     fi
     
-    # Check permissions for rootless Docker
+    # Fix permissions for rootless Docker
     # In rootless mode, the container's claude user (UID 1000) maps to a
-    # subordinate UID on the host that cannot write to host-owned directories.
+    # subordinate UID on the host. Files created by the container are owned
+    # by that subordinate UID, so we need rootlesskit to chmod them.
     if docker info 2>/dev/null | grep -q rootless; then
-        local dirs_to_fix=()
+        local rk=""
+        if command -v rootlesskit >/dev/null 2>&1; then
+            rk="rootlesskit"
+        elif [[ -x "$HOME/bin/rootlesskit" ]]; then
+            rk="$HOME/bin/rootlesskit"
+        fi
+
         local dir
-        for dir in "$PROJECT_DIR" "$PROJECT_PARENT_DIR"; do
+        for dir in "$PROJECT_PARENT_DIR" "$PROJECT_DIR"; do
             if [[ -n "$dir" ]] && [[ -d "$dir" ]]; then
-                if ! stat -c '%a' "$dir" 2>/dev/null | grep -q '7$'; then
-                    dirs_to_fix+=("$dir")
+                if [[ -n "$rk" ]]; then
+                    $rk chmod -R 777 "$dir" 2>/dev/null || true
+                else
+                    chmod -R 777 "$dir" 2>/dev/null || true
                 fi
             fi
         done
-
-        if [[ ${#dirs_to_fix[@]} -gt 0 ]]; then
-            warn "Rootless Docker detected. These directories need open permissions"
-            warn "for the container's user to write files:"
-            printf '\n'
-            for dir in "${dirs_to_fix[@]}"; do
-                printf '  %s\n' "$dir"
-            done
-            printf '\n'
-            printf 'Fix permissions now? [Y/n] '
-            read -r response
-            if [[ ! "$response" =~ ^[Nn]$ ]]; then
-                # Files created by the container are owned by subordinate UIDs —
-                # regular chmod fails on them. Use rootlesskit to run inside
-                # the user namespace where those UIDs are accessible.
-                local chmod_cmd="chmod"
-                if command -v rootlesskit >/dev/null 2>&1; then
-                    chmod_cmd="rootlesskit chmod"
-                elif [[ -x "$HOME/bin/rootlesskit" ]]; then
-                    chmod_cmd="$HOME/bin/rootlesskit chmod"
-                fi
-                for dir in "${dirs_to_fix[@]}"; do
-                    $chmod_cmd -R 777 "$dir" 2>/dev/null || chmod -R 777 "$dir" 2>/dev/null || \
-                        warn "Could not fix permissions on $dir — run manually: rootlesskit chmod -R 777 $dir"
-                done
-                success "Permissions fixed"
-            fi
-        fi
     fi
 
     # Run the container
