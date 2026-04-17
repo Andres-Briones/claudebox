@@ -130,29 +130,31 @@ install_buildx() {
 
 # ------------------------------------------------- configure shell for rootless --
 configure_shell() {
+    local rc_snippet
+    rc_snippet='
+# --- Rootless Docker (added by install-claudebox.sh) ---
+export PATH="$HOME/.local/bin:$HOME/bin:$PATH"
+export DOCKER_HOST="unix:///run/user/$(id -u)/docker.sock"'
+
+    # Add to interactive shell rc
     local shell_rc="$HOME/.bashrc"
     if [[ -n "${ZSH_VERSION:-}" ]] || [[ "$(basename "${SHELL:-}")" == "zsh" ]]; then
         shell_rc="$HOME/.zshrc"
     fi
 
-    local needs_update=false
-
     if ! grep -q 'DOCKER_HOST=unix:///run/user/' "$shell_rc" 2>/dev/null; then
-        needs_update=true
-    fi
-
-    if [[ "$needs_update" == "true" ]]; then
         log "Adding rootless Docker config to ${shell_rc}"
-        cat >> "$shell_rc" << 'SHELL_EOF'
-
-# --- Rootless Docker (added by install-claudebox.sh) ---
-export PATH="$HOME/bin:$PATH"
-export DOCKER_HOST="unix:///run/user/$(id -u)/docker.sock"
-SHELL_EOF
-        log "Shell config updated. Source ${shell_rc} or open a new terminal"
-    else
-        log "Shell already configured for rootless Docker"
+        printf '%s\n' "$rc_snippet" >> "$shell_rc"
     fi
+
+    # Add to login shell profile (for SSH sessions, cron, etc.)
+    local profile="$HOME/.profile"
+    if ! grep -q 'DOCKER_HOST=unix:///run/user/' "$profile" 2>/dev/null; then
+        log "Adding rootless Docker config to ${profile}"
+        printf '%s\n' "$rc_snippet" >> "$profile"
+    fi
+
+    log "Shell config updated. Log out and back in, or run: source ${shell_rc}"
 
     # Export for current session so the rest of the script works
     export PATH="$HOME/bin:$PATH"
