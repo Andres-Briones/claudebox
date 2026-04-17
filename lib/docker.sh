@@ -241,6 +241,17 @@ run_claudebox_container() {
     
     # Mount SSH directory
     docker_args+=(-v "$HOME/.ssh":"/home/$DOCKER_USER/.ssh:ro")
+
+    # Mount host ~/.claude directory read-only for global skill access
+    # Skills installed in the host's ~/.claude/ (e.g., get-shit-done) will be
+    # symlinked into the container's ~/.claude/ by the entrypoint script.
+    # Disable with CLAUDEBOX_NO_HOST_SKILLS=true in ~/.claudebox/env
+    if [[ "${CLAUDEBOX_NO_HOST_SKILLS:-false}" != "true" ]] && [[ -d "$HOME/.claude" ]]; then
+        docker_args+=(-v "$HOME/.claude":/tmp/host-claude-home:ro)
+        if [[ "$VERBOSE" == "true" ]]; then
+            printf '[DEBUG] Mounting host ~/.claude for global skill access\n' >&2
+        fi
+    fi
     
     # Mount .env file if it exists in the project directory
     if [[ -f "$PROJECT_DIR/.env" ]]; then
