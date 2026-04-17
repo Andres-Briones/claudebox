@@ -281,6 +281,16 @@ verify() {
 }
 
 # ----------------------------------------------------------------- uninstall --
+_find_rootlesskit() {
+    if command -v rootlesskit >/dev/null 2>&1; then
+        printf 'rootlesskit'
+    elif [[ -x "$HOME/bin/rootlesskit" ]]; then
+        printf '%s' "$HOME/bin/rootlesskit"
+    elif [[ -x "$HOME/.local/bin/rootlesskit" ]]; then
+        printf '%s' "$HOME/.local/bin/rootlesskit"
+    fi
+}
+
 remove_shell_config() {
     local file="$1"
     if [[ -f "$file" ]] && grep -q 'added by install-claudebox.sh' "$file" 2>/dev/null; then
@@ -317,11 +327,7 @@ remove_rootless_docker() {
 
     # Find rootlesskit before removing binaries (we need it for data cleanup)
     local rk=""
-    if command -v rootlesskit >/dev/null 2>&1; then
-        rk="rootlesskit"
-    elif [[ -x "$HOME/bin/rootlesskit" ]]; then
-        rk="$HOME/bin/rootlesskit"
-    fi
+    rk=$(_find_rootlesskit)
 
     # Remove Docker data BEFORE removing binaries (needs rootlesskit)
     if [[ -d "$HOME/.local/share/docker" ]]; then
@@ -372,10 +378,10 @@ uninstall() {
 
     # Find rootlesskit for removing files owned by subordinate UIDs
     local rk=""
-    if command -v rootlesskit >/dev/null 2>&1; then
-        rk="rootlesskit"
-    elif [[ -x "$HOME/bin/rootlesskit" ]]; then
-        rk="$HOME/bin/rootlesskit"
+    rk=$(_find_rootlesskit)
+    if [[ -z "$rk" ]]; then
+        warn "rootlesskit not found — files owned by container UIDs may not be removable."
+        warn "If removal fails, install rootlesskit or run: sudo rm -rf ~/.claudebox"
     fi
 
     # 1. Remove ClaudeBox
