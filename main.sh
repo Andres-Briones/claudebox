@@ -32,7 +32,9 @@ readonly INSTALL_ROOT="$HOME/.claudebox"
 export SCRIPT_PATH
 export CLAUDEBOX_SCRIPT_DIR="${SCRIPT_DIR}"
 # Set PROJECT_DIR early (but allow override from environment)
-export PROJECT_DIR="${PROJECT_DIR:-$(pwd)}"
+# Resolve symlinks so the path is always canonical — prevents CRC mismatches
+# when /home is a symlink to /srv/home (or similar).
+export PROJECT_DIR="${PROJECT_DIR:-$(cd -P . && pwd)}"
 
 # Initialize VERBOSE to false (will be set properly by CLI parser)
 export VERBOSE=false
