@@ -295,13 +295,21 @@ uninstall() {
         docker system prune -af --volumes 2>/dev/null || true
     fi
 
-    # 2. Stop rootless Docker daemon
+    # 2. Stop rootless Docker daemon and remove systemd units
     if systemctl --user is-active docker >/dev/null 2>&1; then
         log "Stopping rootless Docker daemon"
         systemctl --user stop docker
     fi
     if systemctl --user is-enabled docker >/dev/null 2>&1; then
         systemctl --user disable docker
+    fi
+    log "Removing rootless Docker systemd units"
+    rm -f "$HOME/.config/systemd/user/docker.service"
+    rm -f "$HOME/.config/systemd/user/docker.socket"
+    rm -f "$HOME/.config/systemd/user/default.target.wants/docker.service"
+    rm -f "$HOME/.config/systemd/user/sockets.target.wants/docker.socket"
+    if command -v systemctl >/dev/null 2>&1; then
+        systemctl --user daemon-reload 2>/dev/null || true
     fi
 
     # 2. Remove rootless Docker binaries from ~/bin
