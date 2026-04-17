@@ -233,6 +233,13 @@ install_claudebox() {
     mkdir -p "$HOME/.local/bin"
     ln -sf "$source_dir/main.sh" "$HOME/.local/bin/claudebox"
 
+    # Fix permissions for rootless Docker UID mapping
+    # Host UID maps to root inside container, but the container's claude user
+    # (UID 1000) maps to a subordinate UID on the host that can't write to
+    # host-owned directories. Making projects/ world-writable fixes this.
+    mkdir -p "$INSTALL_DIR/projects"
+    chmod -R 777 "$INSTALL_DIR/projects"
+
     log "ClaudeBox installed to ${source_dir}"
 }
 
