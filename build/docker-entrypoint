@@ -213,6 +213,49 @@ fi
 
 cd /home/DOCKERUSER
 
+# Symlink global skills from host ~/.claude directory (runs in both shell and claude modes)
+# The host ~/.claude is mounted read-only at /tmp/host-claude-home by docker.sh
+# We symlink skill directories (e.g., get-shit-done) into ~/.claude/
+# while skipping known system directories and files
+if [ -d "/tmp/host-claude-home" ]; then
+    for item in /tmp/host-claude-home/*/; do
+        # Skip if glob didn't match anything
+        if [ ! -d "$item" ]; then
+            continue
+        fi
+
+        dir_name=$(basename "$item")
+
+        # Skip known system directories
+        case "$dir_name" in
+            projects|sessions|commands|statsig|todos|keys|mcp)
+                continue
+                ;;
+        esac
+
+        # Skip hidden directories
+        case "$dir_name" in
+            .*)
+                continue
+                ;;
+        esac
+
+        # Only create symlink if target doesn't already exist
+        if [ ! -e "/home/DOCKERUSER/.claude/$dir_name" ]; then
+            runuser -u DOCKERUSER -- ln -s "/tmp/host-claude-home/$dir_name" "/home/DOCKERUSER/.claude/$dir_name"
+            if [ "${VERBOSE:-false}" = "true" ]; then
+                printf 'Linked host skill: %s\n' "$dir_name" >&2
+            fi
+        fi
+    done
+
+    # Also symlink CLAUDE.md from host if not already present
+    # This provides user-level instructions across all containers
+    if [ -f "/tmp/host-claude-home/CLAUDE.md" ] && [ ! -e "/home/DOCKERUSER/.claude/CLAUDE.md" ]; then
+        runuser -u DOCKERUSER -- ln -s "/tmp/host-claude-home/CLAUDE.md" "/home/DOCKERUSER/.claude/CLAUDE.md"
+    fi
+fi
+
 # No need for complex exit handlers - just copy after claude exits
 
 if [[ "${SHELL_MODE:-false}" == "true" ]]; then
@@ -305,7 +348,7 @@ else
                     ln -s "$HOME/.claudebox/commands" "$HOME/.claude/commands"
                 fi
             fi
-            
+
             cd /workspace
             
             # Prepare MCP configuration arguments for native --mcp-config support
