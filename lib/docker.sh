@@ -445,8 +445,18 @@ run_claudebox_container() {
             printf 'Fix permissions now? [Y/n] '
             read -r response
             if [[ ! "$response" =~ ^[Nn]$ ]]; then
+                # Files created by the container are owned by subordinate UIDs —
+                # regular chmod fails on them. Use rootlesskit to run inside
+                # the user namespace where those UIDs are accessible.
+                local chmod_cmd="chmod"
+                if command -v rootlesskit >/dev/null 2>&1; then
+                    chmod_cmd="rootlesskit chmod"
+                elif [[ -x "$HOME/bin/rootlesskit" ]]; then
+                    chmod_cmd="$HOME/bin/rootlesskit chmod"
+                fi
                 for dir in "${dirs_to_fix[@]}"; do
-                    chmod -R 777 "$dir"
+                    $chmod_cmd -R 777 "$dir" 2>/dev/null || chmod -R 777 "$dir" 2>/dev/null || \
+                        warn "Could not fix permissions on $dir — run manually: rootlesskit chmod -R 777 $dir"
                 done
                 success "Permissions fixed"
             fi
