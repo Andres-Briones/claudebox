@@ -315,13 +315,26 @@ uninstall() {
     rm -f "$HOME/.local/bin/claudebox"
 
     # 4. Remove Docker data and config
+    # vfs layers are owned by subordinate UIDs — must delete from inside
+    # the user namespace via rootlesskit, otherwise rm gets permission errors
     if [[ -d "$HOME/.local/share/docker" ]]; then
-        log "Removing Docker data (~/.local/share/docker)"
-        rm -rf "$HOME/.local/share/docker"
+        log "Removing Docker data (~/.local/share/docker) — this may take a moment"
+        if command -v rootlesskit >/dev/null 2>&1; then
+            rootlesskit rm -rf "$HOME/.local/share/docker"
+        elif [[ -x "$HOME/bin/rootlesskit" ]]; then
+            "$HOME/bin/rootlesskit" rm -rf "$HOME/.local/share/docker"
+        else
+            rm -rf "$HOME/.local/share/docker" 2>/dev/null || \
+                warn "Could not fully remove ~/.local/share/docker (permission denied on vfs layers). Remove manually with: rootlesskit rm -rf ~/.local/share/docker"
+        fi
     fi
     if [[ -d "$HOME/.docker" ]]; then
         log "Removing Docker config (~/.docker)"
         rm -rf "$HOME/.docker"
+    fi
+    if [[ -d "$HOME/.config/docker" ]]; then
+        log "Removing Docker config (~/.config/docker)"
+        rm -rf "$HOME/.config/docker"
     fi
 
     # 5. Remove ClaudeBox
