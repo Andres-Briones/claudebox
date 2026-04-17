@@ -155,9 +155,9 @@ SHELL_EOF
 install_claudebox() {
     log "Installing ClaudeBox from ${CLAUDEBOX_REPO}"
 
-    local tmp_dir
+    local tmp_dir=""
     tmp_dir="$(mktemp -d)"
-    trap 'rm -rf "$tmp_dir"' EXIT
+    trap 'rm -rf "${tmp_dir:-}"' EXIT
 
     git clone --depth 1 --branch "$CLAUDEBOX_BRANCH" "$CLAUDEBOX_REPO" "$tmp_dir/claudebox"
 
