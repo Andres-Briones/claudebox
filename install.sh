@@ -39,9 +39,9 @@ check_prerequisites() {
     done
 
     # Packages whose binaries live in /usr/sbin (not in regular user PATH)
-    # or have no single binary to test — check via dpkg instead
+    # or have no single binary to test — use dpkg-query for reliable status
     for pkg in iptables dbus-user-session; do
-        if ! dpkg -l "$pkg" 2>/dev/null | grep -q '^ii'; then
+        if ! dpkg-query -W -f='${Status}' "$pkg" 2>/dev/null | grep -q 'install ok installed'; then
             missing_pkgs+=("$pkg")
         fi
     done
