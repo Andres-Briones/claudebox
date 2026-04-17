@@ -157,23 +157,53 @@ configure_shell() {
 export PATH="$HOME/.local/bin:$HOME/bin:$PATH"
 export DOCKER_HOST="unix:///run/user/$(id -u)/docker.sock"'
 
-    # Add to interactive shell rc
+    # Detect which shell rc to modify
     local shell_rc="$HOME/.bashrc"
     if [[ -n "${ZSH_VERSION:-}" ]] || [[ "$(basename "${SHELL:-}")" == "zsh" ]]; then
         shell_rc="$HOME/.zshrc"
     fi
-
-    if ! grep -q 'DOCKER_HOST=unix:///run/user/' "$shell_rc" 2>/dev/null; then
-        log "Adding rootless Docker config to ${shell_rc}"
-        printf '%s\n' "$rc_snippet" >> "$shell_rc"
-    fi
-
-    # Add to login shell profile (for SSH sessions, cron, etc.)
     local profile="$HOME/.profile"
-    if ! grep -q 'DOCKER_HOST=unix:///run/user/' "$profile" 2>/dev/null; then
-        log "Adding rootless Docker config to ${profile}"
-        printf '%s\n' "$rc_snippet" >> "$profile"
+
+    # Collect which files need modification
+    local files_to_modify=()
+    if ! grep -q 'DOCKER_HOST=unix:///run/user/' "$shell_rc" 2>/dev/null; then
+        files_to_modify+=("$shell_rc")
     fi
+    if ! grep -q 'DOCKER_HOST=unix:///run/user/' "$profile" 2>/dev/null; then
+        files_to_modify+=("$profile")
+    fi
+
+    if [[ ${#files_to_modify[@]} -eq 0 ]]; then
+        log "Shell already configured for rootless Docker"
+        export PATH="$HOME/.local/bin:$HOME/bin:$PATH"
+        export DOCKER_HOST="unix:///run/user/$(id -u)/docker.sock"
+        return 0
+    fi
+
+    # Show the user exactly what will be appended and where
+    printf '\n'
+    warn "The following lines will be appended to these files:"
+    for f in "${files_to_modify[@]}"; do
+        printf '  - %s\n' "$f"
+    done
+    printf '\n'
+    printf '  %s\n' "# --- Rootless Docker (added by install-claudebox.sh) ---"
+    printf '  %s\n' 'export PATH="$HOME/.local/bin:$HOME/bin:$PATH"'
+    printf '  %s\n' 'export DOCKER_HOST="unix:///run/user/$(id -u)/docker.sock"'
+    printf '\n'
+    printf 'Proceed? [y/N] '
+    read -r response </dev/tty
+    if [[ ! "$response" =~ ^[Yy]$ ]]; then
+        warn "Skipped shell configuration. You will need to add these lines manually."
+        export PATH="$HOME/.local/bin:$HOME/bin:$PATH"
+        export DOCKER_HOST="unix:///run/user/$(id -u)/docker.sock"
+        return 0
+    fi
+
+    for f in "${files_to_modify[@]}"; do
+        log "Appending to ${f}"
+        printf '%s\n' "$rc_snippet" >> "$f"
+    done
 
     log "Shell config updated. Log out and back in, or run: source ${shell_rc}"
 
