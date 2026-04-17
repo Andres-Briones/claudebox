@@ -124,7 +124,17 @@ This fork includes the following changes over [upstream](https://github.com/RchG
 - **LaTeX profile** — TeX Live, Emacs, feynmp-auto for Feynman diagrams
 - **Wolfram profile** — Wolfram Engine 14 with persistent licensing across containers
 
-To use it instead of the upstream version:
+#### Quick Install (Debian 12, no sudo required)
+
+One command to install rootless Docker + ClaudeBox from this fork:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/Andres-Briones/claudebox/main/install.sh | bash
+```
+
+The script checks for required system packages and will print an `apt-get install` command for your admin if anything is missing. No `sudo` is used.
+
+#### Manual Install
 
 ```bash
 # Fresh install
