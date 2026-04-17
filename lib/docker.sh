@@ -424,20 +424,30 @@ run_claudebox_container() {
     # In rootless mode, the container's claude user (UID 1000) maps to a
     # subordinate UID on the host that cannot write to host-owned directories.
     if docker info 2>/dev/null | grep -q rootless; then
-        local needs_chmod=false
-        if [[ ! -w "$PROJECT_DIR" ]] || ! stat -c '%a' "$PROJECT_DIR" 2>/dev/null | grep -q '7$'; then
-            needs_chmod=true
-        fi
-        if [[ "$needs_chmod" == "true" ]]; then
-            warn "Rootless Docker detected. The project directory needs open permissions"
-            warn "for the container's user to write files."
+        local dirs_to_fix=()
+        local dir
+        for dir in "$PROJECT_DIR" "$PROJECT_PARENT_DIR"; do
+            if [[ -n "$dir" ]] && [[ -d "$dir" ]]; then
+                if ! stat -c '%a' "$dir" 2>/dev/null | grep -q '7$'; then
+                    dirs_to_fix+=("$dir")
+                fi
+            fi
+        done
+
+        if [[ ${#dirs_to_fix[@]} -gt 0 ]]; then
+            warn "Rootless Docker detected. These directories need open permissions"
+            warn "for the container's user to write files:"
             printf '\n'
-            printf '  Run: chmod -R 777 %s\n' "$PROJECT_DIR"
+            for dir in "${dirs_to_fix[@]}"; do
+                printf '  %s\n' "$dir"
+            done
             printf '\n'
             printf 'Fix permissions now? [Y/n] '
             read -r response
             if [[ ! "$response" =~ ^[Nn]$ ]]; then
-                chmod -R 777 "$PROJECT_DIR"
+                for dir in "${dirs_to_fix[@]}"; do
+                    chmod -R 777 "$dir"
+                done
                 success "Permissions fixed"
             fi
         fi
