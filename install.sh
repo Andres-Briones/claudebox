@@ -315,6 +315,25 @@ remove_rootless_docker() {
         systemctl --user daemon-reload 2>/dev/null || true
     fi
 
+    # Find rootlesskit before removing binaries (we need it for data cleanup)
+    local rk=""
+    if command -v rootlesskit >/dev/null 2>&1; then
+        rk="rootlesskit"
+    elif [[ -x "$HOME/bin/rootlesskit" ]]; then
+        rk="$HOME/bin/rootlesskit"
+    fi
+
+    # Remove Docker data BEFORE removing binaries (needs rootlesskit)
+    if [[ -d "$HOME/.local/share/docker" ]]; then
+        log "Removing Docker data (~/.local/share/docker) — this may take a moment"
+        if [[ -n "$rk" ]]; then
+            $rk rm -rf "$HOME/.local/share/docker"
+        else
+            rm -rf "$HOME/.local/share/docker" 2>/dev/null || \
+                warn "Could not fully remove ~/.local/share/docker. Run: rootlesskit rm -rf ~/.local/share/docker"
+        fi
+    fi
+
     # Remove binaries from ~/bin
     local docker_bins=(
         docker dockerd dockerd-rootless.sh dockerd-rootless-setuptool.sh
@@ -335,19 +354,6 @@ remove_rootless_docker() {
     # Remove symlinks
     rm -f "$HOME/.local/bin/docker" "$HOME/.local/bin/dockerd"
 
-    # Remove Docker data
-    if [[ -d "$HOME/.local/share/docker" ]]; then
-        log "Removing Docker data (~/.local/share/docker) — this may take a moment"
-        if command -v rootlesskit >/dev/null 2>&1; then
-            rootlesskit rm -rf "$HOME/.local/share/docker"
-        elif [[ -x "$HOME/bin/rootlesskit" ]]; then
-            "$HOME/bin/rootlesskit" rm -rf "$HOME/.local/share/docker"
-        else
-            rm -rf "$HOME/.local/share/docker" 2>/dev/null || \
-                warn "Could not fully remove ~/.local/share/docker. Remove manually with: rootlesskit rm -rf ~/.local/share/docker"
-        fi
-    fi
-
     # Remove Docker config
     if [[ -d "$HOME/.docker" ]]; then
         rm -rf "$HOME/.docker"
@@ -364,10 +370,23 @@ uninstall() {
     log "Uninstalling ClaudeBox"
     printf '\n'
 
+    # Find rootlesskit for removing files owned by subordinate UIDs
+    local rk=""
+    if command -v rootlesskit >/dev/null 2>&1; then
+        rk="rootlesskit"
+    elif [[ -x "$HOME/bin/rootlesskit" ]]; then
+        rk="$HOME/bin/rootlesskit"
+    fi
+
     # 1. Remove ClaudeBox
     if [[ -d "$HOME/.claudebox" ]]; then
         log "Removing ClaudeBox (~/.claudebox)"
-        rm -rf "$HOME/.claudebox"
+        if [[ -n "$rk" ]]; then
+            $rk rm -rf "$HOME/.claudebox"
+        else
+            rm -rf "$HOME/.claudebox" 2>/dev/null || \
+                warn "Could not fully remove ~/.claudebox. Run: rootlesskit rm -rf ~/.claudebox"
+        fi
     fi
     rm -f "$HOME/.local/bin/claudebox"
 
@@ -379,7 +398,12 @@ uninstall() {
         read -r response </dev/tty
         if [[ "$response" =~ ^[Yy]$ ]]; then
             log "Removing Claude CLI config (~/.claude)"
-            rm -rf "$HOME/.claude"
+            if [[ -n "$rk" ]]; then
+                $rk rm -rf "$HOME/.claude"
+            else
+                rm -rf "$HOME/.claude" 2>/dev/null || \
+                    warn "Could not fully remove ~/.claude. Run: rootlesskit rm -rf ~/.claude"
+            fi
         else
             log "Keeping ~/.claude"
         fi
