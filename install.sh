@@ -283,19 +283,15 @@ remove_shell_config() {
     fi
 }
 
-uninstall() {
-    printf '\n'
-    log "Uninstalling ClaudeBox + Rootless Docker"
-    printf '\n'
-
-    # 1. Clean up Docker data while daemon is still running
+remove_rootless_docker() {
+    # Clean up Docker data while daemon is still running
     if command -v docker >/dev/null 2>&1 && docker info >/dev/null 2>&1; then
         log "Removing all Docker containers, images, and volumes"
         docker rm -f $(docker ps -aq) 2>/dev/null || true
         docker system prune -af --volumes 2>/dev/null || true
     fi
 
-    # 2. Stop rootless Docker daemon and remove systemd units
+    # Stop daemon and remove systemd units
     if systemctl --user is-active docker >/dev/null 2>&1; then
         log "Stopping rootless Docker daemon"
         systemctl --user stop docker
@@ -303,7 +299,6 @@ uninstall() {
     if systemctl --user is-enabled docker >/dev/null 2>&1; then
         systemctl --user disable docker
     fi
-    log "Removing rootless Docker systemd units"
     rm -f "$HOME/.config/systemd/user/docker.service"
     rm -f "$HOME/.config/systemd/user/docker.socket"
     rm -f "$HOME/.config/systemd/user/default.target.wants/docker.service"
@@ -312,7 +307,7 @@ uninstall() {
         systemctl --user daemon-reload 2>/dev/null || true
     fi
 
-    # 2. Remove rootless Docker binaries from ~/bin
+    # Remove binaries from ~/bin
     local docker_bins=(
         docker dockerd dockerd-rootless.sh dockerd-rootless-setuptool.sh
         rootlesskit rootlesskit-docker-proxy
@@ -326,18 +321,13 @@ uninstall() {
         for bin in "${docker_bins[@]}"; do
             rm -f "$HOME/bin/$bin"
         done
-        # Remove ~/bin only if empty (user may have their own files there)
         rmdir "$HOME/bin" 2>/dev/null || true
     fi
 
-    # 3. Remove symlinks from ~/.local/bin
-    log "Removing symlinks from ~/.local/bin"
+    # Remove symlinks
     rm -f "$HOME/.local/bin/docker" "$HOME/.local/bin/dockerd"
-    rm -f "$HOME/.local/bin/claudebox"
 
-    # 4. Remove Docker data and config
-    # vfs layers are owned by subordinate UIDs — must delete from inside
-    # the user namespace via rootlesskit, otherwise rm gets permission errors
+    # Remove Docker data
     if [[ -d "$HOME/.local/share/docker" ]]; then
         log "Removing Docker data (~/.local/share/docker) — this may take a moment"
         if command -v rootlesskit >/dev/null 2>&1; then
@@ -346,25 +336,34 @@ uninstall() {
             "$HOME/bin/rootlesskit" rm -rf "$HOME/.local/share/docker"
         else
             rm -rf "$HOME/.local/share/docker" 2>/dev/null || \
-                warn "Could not fully remove ~/.local/share/docker (permission denied on vfs layers). Remove manually with: rootlesskit rm -rf ~/.local/share/docker"
+                warn "Could not fully remove ~/.local/share/docker. Remove manually with: rootlesskit rm -rf ~/.local/share/docker"
         fi
     fi
+
+    # Remove Docker config
     if [[ -d "$HOME/.docker" ]]; then
-        log "Removing Docker config (~/.docker)"
         rm -rf "$HOME/.docker"
     fi
     if [[ -d "$HOME/.config/docker" ]]; then
-        log "Removing Docker config (~/.config/docker)"
         rm -rf "$HOME/.config/docker"
     fi
 
-    # 5. Remove ClaudeBox
+    log "Rootless Docker removed"
+}
+
+uninstall() {
+    printf '\n'
+    log "Uninstalling ClaudeBox"
+    printf '\n'
+
+    # 1. Remove ClaudeBox
     if [[ -d "$HOME/.claudebox" ]]; then
         log "Removing ClaudeBox (~/.claudebox)"
         rm -rf "$HOME/.claudebox"
     fi
+    rm -f "$HOME/.local/bin/claudebox"
 
-    # 6. Optionally remove Claude CLI config
+    # 2. Optionally remove Claude CLI config
     if [[ -d "$HOME/.claude" ]]; then
         printf '\n'
         warn "~/.claude contains Claude CLI settings, credentials, and conversation history."
@@ -378,7 +377,25 @@ uninstall() {
         fi
     fi
 
-    # 7. Remove shell config
+    # 3. Optionally remove rootless Docker
+    local has_docker=false
+    if [[ -x "$HOME/bin/dockerd" ]] || [[ -d "$HOME/.local/share/docker" ]]; then
+        has_docker=true
+    fi
+
+    if [[ "$has_docker" == "true" ]]; then
+        printf '\n'
+        warn "Rootless Docker is installed. This will remove the daemon, all images, containers, and volumes."
+        printf 'Also remove rootless Docker? [y/N] '
+        read -r response </dev/tty
+        if [[ "$response" =~ ^[Yy]$ ]]; then
+            remove_rootless_docker
+        else
+            log "Keeping rootless Docker"
+        fi
+    fi
+
+    # 4. Remove shell config
     remove_shell_config "$HOME/.bashrc"
     remove_shell_config "$HOME/.zshrc"
     remove_shell_config "$HOME/.profile"
