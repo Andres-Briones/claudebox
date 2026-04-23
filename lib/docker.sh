@@ -221,13 +221,13 @@ run_claudebox_container() {
         -v "$PROJECT_PARENT_DIR":/home/$DOCKER_USER/.claudebox
     )
     
-    # Ensure .claude directory exists
-    if [[ ! -d "$PROJECT_SLOT_DIR/.claude" ]]; then
-        mkdir -p "$PROJECT_SLOT_DIR/.claude"
-    fi
-    
+    # Ensure .claude directory exists and re-sync seed files from source/claude/
+    # so edits to CLAUDE.md / settings.json propagate to every slot on launch.
+    mkdir -p "$PROJECT_SLOT_DIR/.claude"
+    sync_claude_seed_files "$PROJECT_SLOT_DIR"
+
     docker_args+=(-v "$PROJECT_SLOT_DIR/.claude":/home/$DOCKER_USER/.claude)
-    
+
     # Mount .claude.json only if it already exists (from previous session)
     if [[ -f "$PROJECT_SLOT_DIR/.claude.json" ]]; then
         docker_args+=(-v "$PROJECT_SLOT_DIR/.claude.json":/home/$DOCKER_USER/.claude.json)

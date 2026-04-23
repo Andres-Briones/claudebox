@@ -109,20 +109,37 @@ write_counter() {
 init_slot_dir() {
     local dir="$1"
     mkdir -p "$dir"
-    
-    # Check if claude/ directory exists in the claudebox root to seed .claude
-    local claude_source="${CLAUDEBOX_SCRIPT_DIR:-${SCRIPT_DIR}}/claude"
-    if [[ -d "$claude_source" ]]; then
-        # Copy the claude folder to .claude to seed it
-        cp -r "$claude_source" "$dir/.claude"
-    else
-        # Fall back to creating empty .claude directory
-        mkdir -p "$dir/.claude"
-    fi
-    
+    mkdir -p "$dir/.claude"
+    sync_claude_seed_files "$dir"
     mkdir -p "$dir/.config"
     mkdir -p "$dir/.cache"
     # Don't pre-create .claude.json - let Claude create it naturally
+}
+
+# Sync seed files (CLAUDE.md, settings.json, PR_TEMPLATE_REFERENCE.md) from
+# source/claude/ into the slot's .claude/. A file is overwritten only when the
+# source is newer (mtime) or the slot copy is missing. Per-slot state created
+# by Claude (.credentials.json, projects/, .claude.json, history) is left
+# untouched because those filenames don't exist in source/claude/.
+sync_claude_seed_files() {
+    local slot_dir="$1"
+    local claude_source="${CLAUDEBOX_SCRIPT_DIR:-${SCRIPT_DIR}}/claude"
+
+    if [[ ! -d "$claude_source" ]]; then
+        return 0
+    fi
+
+    mkdir -p "$slot_dir/.claude"
+
+    local src dest rel
+    while IFS= read -r -d '' src; do
+        rel="${src#$claude_source/}"
+        dest="$slot_dir/.claude/$rel"
+        if [[ ! -e "$dest" ]] || [[ "$src" -nt "$dest" ]]; then
+            mkdir -p "$(dirname "$dest")"
+            cp "$src" "$dest"
+        fi
+    done < <(find "$claude_source" -type f -print0)
 }
 
 # Create or reuse a container slot:
