@@ -114,15 +114,32 @@ bash .builder/build.sh
 
 This fork includes the following changes over [upstream](https://github.com/RchGrav/claudebox):
 
-**Bug fixes:**
-- Fix missing `||` operator in Dockerfile placeholder guard (`main.sh`)
-- Fix `local` keyword used outside functions in `docker-entrypoint` (lines 86, 109, 141)
+**Rootless Docker support (Debian 12, no sudo):**
+- One-shot installer that sets up rootless Docker + ClaudeBox together
+- Uses `fuse-overlayfs` storage driver; `rootlesskit` is used everywhere elevated access would otherwise be needed (permission fixes, uninstall cleanup)
+- Auto-detects rootless Docker and silently fixes project-dir permissions before launch
+- Resolves symlinks in `PROJECT_DIR` so the project CRC doesn't drift when `/home` is symlinked
+- `--uninstall` flag that cleanly removes rootless Docker + all ClaudeBox state, with prompts before touching `~/.claude`
 
-**Features:**
-- Custom environment file support (`~/.claudebox/env`) via Docker `--env-file` — use alternative API providers (OpenRouter, local proxies) without modifying source code
-- Provider toggle script (`examples/toggle-provider.sh`) to switch between Anthropic and custom providers
-- **LaTeX profile** — TeX Live, Emacs, feynmp-auto for Feynman diagrams
-- **Wolfram profile** — Wolfram Engine 14 with persistent licensing across containers
+**Claude auth & config:**
+- **Shared login across slots** — `~/.claude/.credentials.json` is bind-mounted into every slot so you authenticate once; set `CLAUDEBOX_SHARE_CREDENTIALS=false` for a clean-auth slot
+- **Seeded identity** — `~/.claude.json` (user identity + onboarding flag) is copied into new slots once, so fresh slots don't trigger onboarding
+- **Live seed-file sync** — edits to `source/claude/CLAUDE.md` / `settings.json` propagate into every slot (new and existing) on next launch, preserving per-slot credentials and history
+
+**Alternative API providers:**
+- Custom environment file (`~/.claudebox/env`) loaded via Docker `--env-file` — switch to OpenRouter, local proxies, etc. without touching source
+- Provider toggle script (`examples/toggle-provider.sh`) for quick switching
+
+**New profiles:**
+- **LaTeX** — TeX Live, Emacs, feynmp-auto for Feynman diagrams (slimmed down to save ~1.5 GB)
+- **Wolfram** — Wolfram Engine 14 with persistent licensing across containers
+- **wolfram-cloud** — lightweight variant using `wolframclient` against Wolfram Cloud
+
+**Bug fixes (selected):**
+- Missing `||` operator in Dockerfile placeholder guard (`main.sh`)
+- `local` keyword used outside functions in `docker-entrypoint`
+- `/dev/tty` busy error in Wolfram installer under BuildKit
+- Permission drift on container-owned files under rootless Docker
 
 #### Quick Install (Debian 12, no sudo required)
 
