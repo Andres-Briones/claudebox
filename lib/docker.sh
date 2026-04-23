@@ -228,7 +228,47 @@ run_claudebox_container() {
 
     docker_args+=(-v "$PROJECT_SLOT_DIR/.claude":/home/$DOCKER_USER/.claude)
 
-    # Mount .claude.json only if it already exists (from previous session)
+    # Share host login so each slot doesn't re-authenticate.
+    # Credentials are bind-mounted live (token refresh in one slot updates all).
+    # Identity file (.claude.json) is seeded per slot then diverges, so history
+    # and MCP state stay per-slot.
+    # Set CLAUDEBOX_SHARE_CREDENTIALS=false to force a clean-auth slot.
+    if [[ "${CLAUDEBOX_SHARE_CREDENTIALS:-true}" == "true" ]]; then
+        # Bootstrap: if host files are missing but a previous slot already
+        # logged in, promote that slot's credentials + identity file to the
+        # host so every future slot picks them up.
+        if [[ ! -f "$HOME/.claude/.credentials.json" ]]; then
+            local promoted
+            promoted=$(find "$PROJECT_PARENT_DIR" -maxdepth 3 -path '*/.claude/.credentials.json' -print -quit 2>/dev/null || true)
+            if [[ -n "$promoted" ]]; then
+                mkdir -p "$HOME/.claude"
+                cp "$promoted" "$HOME/.claude/.credentials.json"
+                chmod 600 "$HOME/.claude/.credentials.json"
+            fi
+        fi
+        if [[ ! -f "$HOME/.claude.json" ]]; then
+            local promoted_json
+            promoted_json=$(find "$PROJECT_PARENT_DIR" -maxdepth 2 -name '.claude.json' -print -quit 2>/dev/null || true)
+            if [[ -n "$promoted_json" ]]; then
+                cp "$promoted_json" "$HOME/.claude.json"
+            fi
+        fi
+        if [[ -f "$HOME/.claude/.credentials.json" ]]; then
+            docker_args+=(-v "$HOME/.claude/.credentials.json":/home/$DOCKER_USER/.claude/.credentials.json)
+        fi
+    fi
+
+    # Seed a fresh slot's .claude.json from the host so Claude recognises the
+    # user (identity + onboarding flag live in ~/.claude.json, not in
+    # .credentials.json). History/MCP/etc. stay per-slot because we only seed
+    # once — subsequent runs use the slot's own copy.
+    if [[ "${CLAUDEBOX_SHARE_CREDENTIALS:-true}" == "true" ]] \
+       && [[ ! -f "$PROJECT_SLOT_DIR/.claude.json" ]] \
+       && [[ -f "$HOME/.claude.json" ]]; then
+        cp "$HOME/.claude.json" "$PROJECT_SLOT_DIR/.claude.json"
+    fi
+
+    # Mount .claude.json only if it already exists (from previous session or seed)
     if [[ -f "$PROJECT_SLOT_DIR/.claude.json" ]]; then
         docker_args+=(-v "$PROJECT_SLOT_DIR/.claude.json":/home/$DOCKER_USER/.claude.json)
     fi
