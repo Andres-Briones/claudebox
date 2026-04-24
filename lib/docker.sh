@@ -228,6 +228,36 @@ run_claudebox_container() {
 
     docker_args+=(-v "$PROJECT_SLOT_DIR/.claude":/home/$DOCKER_USER/.claude)
 
+    # Share auto-memory across all slots of this project so skills, user
+    # profile, feedback, and decisions carry over between slots. Bind-mount
+    # just the memory/ subdir on top of the outer .claude mount — history,
+    # settings, and everything else in ~/.claude/ stay per-slot.
+    # Set CLAUDEBOX_SHARE_MEMORY=false to opt out.
+    if [[ "${CLAUDEBOX_SHARE_MEMORY:-true}" == "true" ]]; then
+        local shared_memory="$PROJECT_PARENT_DIR/shared-memory"
+        # Bootstrap: if shared memory doesn't exist yet but a previous slot
+        # already has accumulated memory, promote the largest one so we
+        # don't discard prior learning.
+        if [[ ! -d "$shared_memory" ]]; then
+            local promoted_memory=""
+            local max_size=0
+            local candidate size
+            while IFS= read -r -d '' candidate; do
+                size=$(du -s "$candidate" 2>/dev/null | awk '{print $1}' || true)
+                if [[ -n "$size" ]] && (( size > max_size )); then
+                    max_size=$size
+                    promoted_memory=$candidate
+                fi
+            done < <(find "$PROJECT_PARENT_DIR" -maxdepth 5 -type d -path '*/.claude/projects/-workspace/memory' -print0 2>/dev/null)
+
+            mkdir -p "$shared_memory"
+            if [[ -n "$promoted_memory" ]]; then
+                cp -r "$promoted_memory/." "$shared_memory/" 2>/dev/null || true
+            fi
+        fi
+        docker_args+=(-v "$shared_memory":/home/$DOCKER_USER/.claude/projects/-workspace/memory)
+    fi
+
     # Share host login so each slot doesn't re-authenticate.
     # Credentials are bind-mounted live (token refresh in one slot updates all).
     # Identity file (.claude.json) is seeded per slot then diverges, so history
