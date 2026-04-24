@@ -27,8 +27,10 @@ The Ultimate Claude Code Docker Development Environment - Run Claude AI's coding
 This fork has diverged significantly from [upstream](https://github.com/RchGrav/claudebox).
 Before installing, check the [fork changes](#installing-this-fork) section to
 see what's different — rootless Docker support, shared Claude auth across
-slots, shared auto-memory across slots, alternative API providers, new
-LaTeX / Wolfram profiles, and various bug fixes.
+slots, shared auto-memory across slots, a Hermes-inspired agent
+auto-improvement workflow (skills / scripts / memory / versioned state),
+alternative API providers, new LaTeX / Wolfram profiles, and various bug
+fixes.
 
 Quick install (Debian 12, no sudo):
 
@@ -142,6 +144,14 @@ This fork includes the following changes over [upstream](https://github.com/RchG
 - **Seeded identity** — `~/.claude.json` (user identity + onboarding flag) is copied into new slots once, so fresh slots don't trigger onboarding
 - **Live seed-file sync** — edits to `source/claude/CLAUDE.md` / `settings.json` propagate into every slot (new and existing) on next launch, preserving per-slot credentials and history
 - **Shared auto-memory across slots** — `~/.claude/projects/-workspace/memory/` is bind-mounted from a project-wide `shared-memory/` dir, so skills, user profile, feedback, and decisions carry over between slots; existing memory in the largest slot is auto-promoted on first mount so no prior learning is lost. Set `CLAUDEBOX_SHARE_MEMORY=false` to opt out
+
+**Agent auto-improvement (Hermes-inspired):**
+- Seed `claude/CLAUDE.md` ships with a lightweight self-improvement loop so the agent gets sharper over time without extra setup:
+  - **Skills** — procedural "how I solved X" recipes saved to `/workspace/.claude/skills/<slug>.md` with specific triggers (e.g. *"test passes locally but fails in CI"*), surfaced via a manifest so future sessions can match them
+  - **Scripts** — when a task is a repeatable procedure, the agent proactively proposes saving it as `/workspace/.claude/scripts/<slug>.sh` (with manifest + "last verified" date) instead of re-typing the steps each time
+  - **Auto-memory** — declarative facts (user profile, feedback, project state, external references) persisted across sessions under `~/.claude/projects/-workspace/memory/`, now shared across slots
+  - **Versioned agent state** — nested `git init` inside `/workspace/.claude/` gives diff / blame / rollback for skills, plans, decisions, and CLAUDE.md itself, without leaking to the public repo
+  - **Self-nudge at task close** — the agent pauses at task end to capture non-obvious learnings before context drops
 
 **Alternative API providers:**
 - Custom environment file (`~/.claudebox/env`) loaded via Docker `--env-file` — switch to OpenRouter, local proxies, etc. without touching source
