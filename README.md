@@ -24,33 +24,114 @@ The Ultimate Claude Code Docker Development Environment - Run Claude AI's coding
 
 ## 🍴 About This Fork
 
-This fork has diverged significantly from [upstream](https://github.com/RchGrav/claudebox).
-Before installing, check the [fork changes](#installing-this-fork) section to
-see what's different — rootless Docker support, shared Claude auth across
-slots, shared auto-memory across slots, a Hermes-inspired agent
-auto-improvement workflow (skills / scripts / memory / versioned state),
-host `~/.claude` skills surfaced inside containers, a `claudebox resume`
-cross-slot session picker, alternative API providers, new LaTeX / Wolfram
-profiles, and various bug fixes.
+This fork has diverged significantly from [upstream](https://github.com/RchGrav/claudebox) — it adds rootless Docker support, shared Claude auth/memory across slots, a Hermes-inspired agent auto-improvement workflow (skills / scripts / memory / versioned state), host `~/.claude` skills surfaced inside containers, a `claudebox resume` cross-slot session picker, alternative API providers, new LaTeX / Wolfram profiles, and a handful of upstream bug fixes.
 
-Quick install (Debian 12, no sudo):
+### What's Different
+
+**Rootless Docker support (Debian 12, no sudo):**
+- One-shot installer that sets up rootless Docker + ClaudeBox together
+- Uses `fuse-overlayfs` storage driver; `rootlesskit` is used everywhere elevated access would otherwise be needed (permission fixes, uninstall cleanup)
+- Auto-detects rootless Docker and silently fixes project-dir permissions before launch
+- Resolves symlinks in `PROJECT_DIR` so the project CRC doesn't drift when `/home` is symlinked
+- `--uninstall` flag that cleanly removes rootless Docker + all ClaudeBox state, with prompts before touching `~/.claude`
+
+**Claude auth & config:**
+- **Log in once, use every slot** — the host's `~/.claude/.credentials.json` (OAuth token) is bind-mounted live into every slot. When a token refresh happens in any slot, all the others pick it up too. Opt out per-slot with `CLAUDEBOX_SHARE_CREDENTIALS=false`
+- **No onboarding on fresh slots** — `~/.claude.json` holds your Claude identity plus the "first-run done" flag *and* per-slot state (chat history, MCP, etc.). It's copied from the host into each new slot once at creation, then left alone — so slots start logged-in but keep their own history
+- **Default config stays in sync** — the repo ships seed files at `source/claude/CLAUDE.md` and `source/claude/settings.json` (the defaults every slot starts with). Editing those propagates the change into every slot — new *and* existing — on next launch, without touching per-slot credentials or history
+- **Shared auto-memory across slots** — `~/.claude/projects/-workspace/memory/` is bind-mounted from a project-wide `shared-memory/` dir, so skills, user profile, feedback, and decisions carry over between slots; existing memory in the largest slot is auto-promoted on first mount so no prior learning is lost. Set `CLAUDEBOX_SHARE_MEMORY=false` to opt out
+
+**Agent auto-improvement (Hermes-inspired):**
+- Seed `claude/CLAUDE.md` ships with a lightweight self-improvement loop so the agent gets sharper over time without extra setup:
+  - **Skills** — procedural "how I solved X" recipes saved to `/workspace/.claude/skills/<slug>.md` with specific triggers (e.g. *"test passes locally but fails in CI"*), surfaced via a manifest so future sessions can match them
+  - **Scripts** — when a task is a repeatable procedure, the agent proactively proposes saving it as `/workspace/.claude/scripts/<slug>.sh` (with manifest + "last verified" date) instead of re-typing the steps each time
+  - **Auto-memory** — declarative facts (user profile, feedback, project state, external references) persisted across sessions under `~/.claude/projects/-workspace/memory/`, now shared across slots
+  - **Versioned agent state** — nested `git init` inside `/workspace/.claude/` gives diff / blame / rollback for skills, plans, decisions, and CLAUDE.md itself, without leaking to the public repo
+  - **Self-nudge at task close** — the agent pauses at task end to capture non-obvious learnings before context drops
+- **Host `~/.claude` skills in containers** — the host `~/.claude/` directory is bind-mounted read-only and each non-system subdirectory (skipping `projects`, `sessions`, `commands`, `statsig`, `todos`, `keys`, `mcp`) is symlinked into the container's `~/.claude/`, so globally installed Claude Code skills (e.g. `get-shit-done`) work inside every slot without reinstalling. A host-level `CLAUDE.md` is also symlinked in if the slot doesn't already have one. Set `CLAUDEBOX_NO_HOST_SKILLS=true` to opt out. Complements the per-project skills under `/workspace/.claude/skills/` — different scope, different mutability (host = read-only globals, project = writable agent notes)
+
+**Cross-slot session picker:**
+- **`claudebox resume`** — fzf-based picker that lists Claude sessions across every slot of the current project, with last-modified date, size, and a live indicator for sessions whose container is still running. Flags: `-n NUM` to limit the list (default 50), `-a` for all sessions, `-A` to include every project, `-d` for debug output. Works on both Linux and macOS (`stat`/`date` shims baked in)
+
+**Alternative API providers:**
+- Custom environment file (`~/.claudebox/env`) loaded via Docker `--env-file` — switch to OpenRouter, local proxies, etc. without touching source
+- Provider toggle script (`examples/toggle-provider.sh`) for quick switching
+
+**New profiles:**
+- **LaTeX** — TeX Live, Emacs, feynmp-auto for Feynman diagrams (slimmed down to save ~1.5 GB)
+- **Wolfram** — Wolfram Engine 14 with persistent licensing across containers
+- **wolfram-cloud** — lightweight variant using `wolframclient` against Wolfram Cloud
+
+**Upstream bug fixes (not yet in [RchGrav/claudebox](https://github.com/RchGrav/claudebox)):**
+- Missing `||` operator in Dockerfile placeholder guard (`main.sh`) — unreplaced `{{LABELS}}` placeholders were never detected
+- `local` keyword used outside functions in `docker-entrypoint` — caused container startup failure on venv setup and Python profile paths (lines 86, 109, 141)
+
+### Installing This Fork
+
+#### Quick Install (Debian 12, no sudo required)
+
+One command to install rootless Docker + ClaudeBox from this fork:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/Andres-Briones/claudebox/main/install.sh | bash
 ```
 
-See [Installing This Fork](#installing-this-fork) for full details.
+The script checks for required system packages and will print an `apt-get install` command for your admin if anything is missing. No `sudo` is used.
 
-## 🚀 What's New in Latest Update
+#### Manual Install
 
-- **Enhanced UI/UX**: Improved menu alignment and comprehensive info display
-- **New `profiles` Command**: Quick listing of all available profiles with descriptions
-- **Firewall Management**: New `allowlist` command to view/edit network allowlists
-- **Per-Project Isolation**: Separate Docker images, auth state, history, and configs
-- **Improved Clean Menu**: Clear descriptions showing exact paths that will be removed
-- **Profile Management Menu**: Interactive profile command with status and examples
-- **Persistent Project Data**: Auth state, shell history, and tool configs preserved
-- **Smart Profile Dependencies**: Automatic dependency resolution (e.g., C includes build-tools)
+```bash
+# Fresh install
+git clone https://github.com/Andres-Briones/claudebox.git ~/.claudebox/source
+mkdir -p ~/.local/bin
+ln -sf ~/.claudebox/source/main.sh ~/.local/bin/claudebox
+
+# Or replace an existing installation
+mv ~/.claudebox/source ~/.claudebox/source.bak
+git clone https://github.com/Andres-Briones/claudebox.git ~/.claudebox/source
+```
+
+To update: `cd ~/.claudebox/source && git pull`
+
+### Custom API Provider (env file)
+
+You can route claudebox through an alternative API provider (e.g., OpenRouter) by creating a `~/.claudebox/env` file. This file is passed to the container via Docker's `--env-file` flag.
+
+**Setup:**
+
+```bash
+# Copy the example and edit with your values
+cp ~/.claudebox/source/examples/env.example ~/.claudebox/env
+nano ~/.claudebox/env
+```
+
+**Example `~/.claudebox/env` for OpenRouter:**
+
+```
+ANTHROPIC_BASE_URL=https://openrouter.ai/api
+ANTHROPIC_AUTH_TOKEN=sk-or-v1-your-token-here
+ANTHROPIC_API_KEY=
+ANTHROPIC_DEFAULT_OPUS_MODEL=anthropic/claude-opus-4
+ANTHROPIC_DEFAULT_SONNET_MODEL=anthropic/claude-sonnet-4
+ANTHROPIC_DEFAULT_HAIKU_MODEL=anthropic/claude-haiku
+```
+
+Restart the container after creating or modifying the env file.
+
+**Switching between providers:**
+
+Use the toggle script to quickly switch between the default Anthropic API and your custom provider:
+
+```bash
+# Toggle provider (renames env <-> env.bak)
+~/.claudebox/source/examples/toggle-provider.sh
+
+# Or copy it somewhere convenient
+cp ~/.claudebox/source/examples/toggle-provider.sh ~/.local/bin/claudebox-provider
+claudebox-provider
+```
+
+When the env file is present, claudebox uses your custom provider. When removed (backed up to `env.bak`), it falls back to the default Anthropic API with your `ANTHROPIC_API_KEY`. Restart the container after toggling.
 
 ## ✨ Features
 
@@ -128,113 +209,6 @@ bash .builder/build.sh
 # Run the installer
 ./claudebox.run
 ```
-
-### Installing This Fork
-
-This fork includes the following changes over [upstream](https://github.com/RchGrav/claudebox):
-
-**Rootless Docker support (Debian 12, no sudo):**
-- One-shot installer that sets up rootless Docker + ClaudeBox together
-- Uses `fuse-overlayfs` storage driver; `rootlesskit` is used everywhere elevated access would otherwise be needed (permission fixes, uninstall cleanup)
-- Auto-detects rootless Docker and silently fixes project-dir permissions before launch
-- Resolves symlinks in `PROJECT_DIR` so the project CRC doesn't drift when `/home` is symlinked
-- `--uninstall` flag that cleanly removes rootless Docker + all ClaudeBox state, with prompts before touching `~/.claude`
-
-**Claude auth & config:**
-- **Log in once, use every slot** — the host's `~/.claude/.credentials.json` (OAuth token) is bind-mounted live into every slot. When a token refresh happens in any slot, all the others pick it up too. Opt out per-slot with `CLAUDEBOX_SHARE_CREDENTIALS=false`
-- **No onboarding on fresh slots** — `~/.claude.json` holds your Claude identity plus the "first-run done" flag *and* per-slot state (chat history, MCP, etc.). It's copied from the host into each new slot once at creation, then left alone — so slots start logged-in but keep their own history
-- **Default config stays in sync** — the repo ships seed files at `source/claude/CLAUDE.md` and `source/claude/settings.json` (the defaults every slot starts with). Editing those propagates the change into every slot — new *and* existing — on next launch, without touching per-slot credentials or history
-- **Shared auto-memory across slots** — `~/.claude/projects/-workspace/memory/` is bind-mounted from a project-wide `shared-memory/` dir, so skills, user profile, feedback, and decisions carry over between slots; existing memory in the largest slot is auto-promoted on first mount so no prior learning is lost. Set `CLAUDEBOX_SHARE_MEMORY=false` to opt out
-
-**Agent auto-improvement (Hermes-inspired):**
-- Seed `claude/CLAUDE.md` ships with a lightweight self-improvement loop so the agent gets sharper over time without extra setup:
-  - **Skills** — procedural "how I solved X" recipes saved to `/workspace/.claude/skills/<slug>.md` with specific triggers (e.g. *"test passes locally but fails in CI"*), surfaced via a manifest so future sessions can match them
-  - **Scripts** — when a task is a repeatable procedure, the agent proactively proposes saving it as `/workspace/.claude/scripts/<slug>.sh` (with manifest + "last verified" date) instead of re-typing the steps each time
-  - **Auto-memory** — declarative facts (user profile, feedback, project state, external references) persisted across sessions under `~/.claude/projects/-workspace/memory/`, now shared across slots
-  - **Versioned agent state** — nested `git init` inside `/workspace/.claude/` gives diff / blame / rollback for skills, plans, decisions, and CLAUDE.md itself, without leaking to the public repo
-  - **Self-nudge at task close** — the agent pauses at task end to capture non-obvious learnings before context drops
-- **Host `~/.claude` skills in containers** — the host `~/.claude/` directory is bind-mounted read-only and each non-system subdirectory (skipping `projects`, `sessions`, `commands`, `statsig`, `todos`, `keys`, `mcp`) is symlinked into the container's `~/.claude/`, so globally installed Claude Code skills (e.g. `get-shit-done`) work inside every slot without reinstalling. A host-level `CLAUDE.md` is also symlinked in if the slot doesn't already have one. Set `CLAUDEBOX_NO_HOST_SKILLS=true` to opt out. Complements the per-project skills under `/workspace/.claude/skills/` — different scope, different mutability (host = read-only globals, project = writable agent notes)
-
-**Cross-slot session picker:**
-- **`claudebox resume`** — fzf-based picker that lists Claude sessions across every slot of the current project, with last-modified date, size, and a live indicator for sessions whose container is still running. Flags: `-n NUM` to limit the list (default 50), `-a` for all sessions, `-A` to include every project, `-d` for debug output. Works on both Linux and macOS (`stat`/`date` shims baked in)
-
-**Alternative API providers:**
-- Custom environment file (`~/.claudebox/env`) loaded via Docker `--env-file` — switch to OpenRouter, local proxies, etc. without touching source
-- Provider toggle script (`examples/toggle-provider.sh`) for quick switching
-
-**New profiles:**
-- **LaTeX** — TeX Live, Emacs, feynmp-auto for Feynman diagrams (slimmed down to save ~1.5 GB)
-- **Wolfram** — Wolfram Engine 14 with persistent licensing across containers
-- **wolfram-cloud** — lightweight variant using `wolframclient` against Wolfram Cloud
-
-**Upstream bug fixes (not yet in [RchGrav/claudebox](https://github.com/RchGrav/claudebox)):**
-- Missing `||` operator in Dockerfile placeholder guard (`main.sh`) — unreplaced `{{LABELS}}` placeholders were never detected
-- `local` keyword used outside functions in `docker-entrypoint` — caused container startup failure on venv setup and Python profile paths (lines 86, 109, 141)
-
-#### Quick Install (Debian 12, no sudo required)
-
-One command to install rootless Docker + ClaudeBox from this fork:
-
-```bash
-curl -fsSL https://raw.githubusercontent.com/Andres-Briones/claudebox/main/install.sh | bash
-```
-
-The script checks for required system packages and will print an `apt-get install` command for your admin if anything is missing. No `sudo` is used.
-
-#### Manual Install
-
-```bash
-# Fresh install
-git clone https://github.com/Andres-Briones/claudebox.git ~/.claudebox/source
-mkdir -p ~/.local/bin
-ln -sf ~/.claudebox/source/main.sh ~/.local/bin/claudebox
-
-# Or replace an existing installation
-mv ~/.claudebox/source ~/.claudebox/source.bak
-git clone https://github.com/Andres-Briones/claudebox.git ~/.claudebox/source
-```
-
-To update: `cd ~/.claudebox/source && git pull`
-
-### Custom API Provider (env file)
-
-You can route claudebox through an alternative API provider (e.g., OpenRouter) by creating a `~/.claudebox/env` file. This file is passed to the container via Docker's `--env-file` flag.
-
-**Setup:**
-
-```bash
-# Copy the example and edit with your values
-cp ~/.claudebox/source/examples/env.example ~/.claudebox/env
-nano ~/.claudebox/env
-```
-
-**Example `~/.claudebox/env` for OpenRouter:**
-
-```
-ANTHROPIC_BASE_URL=https://openrouter.ai/api
-ANTHROPIC_AUTH_TOKEN=sk-or-v1-your-token-here
-ANTHROPIC_API_KEY=
-ANTHROPIC_DEFAULT_OPUS_MODEL=anthropic/claude-opus-4
-ANTHROPIC_DEFAULT_SONNET_MODEL=anthropic/claude-sonnet-4
-ANTHROPIC_DEFAULT_HAIKU_MODEL=anthropic/claude-haiku
-```
-
-Restart the container after creating or modifying the env file.
-
-**Switching between providers:**
-
-Use the toggle script to quickly switch between the default Anthropic API and your custom provider:
-
-```bash
-# Toggle provider (renames env <-> env.bak)
-~/.claudebox/source/examples/toggle-provider.sh
-
-# Or copy it somewhere convenient
-cp ~/.claudebox/source/examples/toggle-provider.sh ~/.local/bin/claudebox-provider
-claudebox-provider
-```
-
-When the env file is present, claudebox uses your custom provider. When removed (backed up to `env.bak`), it falls back to the default Anthropic API with your `ANTHROPIC_API_KEY`. Restart the container after toggling.
 
 ### PATH Configuration
 
