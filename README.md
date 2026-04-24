@@ -22,6 +22,22 @@ The Ultimate Claude Code Docker Development Environment - Run Claude AI's coding
 ╚═════╝  ╚═════╝ ╚═╝  ╚═╝
 ```
 
+## 🍴 About This Fork
+
+This fork has diverged significantly from [upstream](https://github.com/RchGrav/claudebox).
+Before installing, check the [fork changes](#installing-this-fork) section to
+see what's different — rootless Docker support, shared Claude auth across
+slots, shared auto-memory across slots, alternative API providers, new
+LaTeX / Wolfram profiles, and various bug fixes.
+
+Quick install (Debian 12, no sudo):
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/Andres-Briones/claudebox/main/install.sh | bash
+```
+
+See [Installing This Fork](#installing-this-fork) for full details.
+
 ## 🚀 What's New in Latest Update
 
 - **Enhanced UI/UX**: Improved menu alignment and comprehensive info display
@@ -125,6 +141,7 @@ This fork includes the following changes over [upstream](https://github.com/RchG
 - **Shared login across slots** — `~/.claude/.credentials.json` is bind-mounted into every slot so you authenticate once; set `CLAUDEBOX_SHARE_CREDENTIALS=false` for a clean-auth slot
 - **Seeded identity** — `~/.claude.json` (user identity + onboarding flag) is copied into new slots once, so fresh slots don't trigger onboarding
 - **Live seed-file sync** — edits to `source/claude/CLAUDE.md` / `settings.json` propagate into every slot (new and existing) on next launch, preserving per-slot credentials and history
+- **Shared auto-memory across slots** — `~/.claude/projects/-workspace/memory/` is bind-mounted from a project-wide `shared-memory/` dir, so skills, user profile, feedback, and decisions carry over between slots; existing memory in the largest slot is auto-promoted on first mount so no prior learning is lost. Set `CLAUDEBOX_SHARE_MEMORY=false` to opt out
 
 **Alternative API providers:**
 - Custom environment file (`~/.claudebox/env`) loaded via Docker `--env-file` — switch to OpenRouter, local proxies, etc. without touching source
