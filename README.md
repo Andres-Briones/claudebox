@@ -29,8 +29,9 @@ Before installing, check the [fork changes](#installing-this-fork) section to
 see what's different — rootless Docker support, shared Claude auth across
 slots, shared auto-memory across slots, a Hermes-inspired agent
 auto-improvement workflow (skills / scripts / memory / versioned state),
-alternative API providers, new LaTeX / Wolfram profiles, and various bug
-fixes.
+host `~/.claude` skills surfaced inside containers, a `claudebox resume`
+cross-slot session picker, alternative API providers, new LaTeX / Wolfram
+profiles, and various bug fixes.
 
 Quick install (Debian 12, no sudo):
 
@@ -140,9 +141,9 @@ This fork includes the following changes over [upstream](https://github.com/RchG
 - `--uninstall` flag that cleanly removes rootless Docker + all ClaudeBox state, with prompts before touching `~/.claude`
 
 **Claude auth & config:**
-- **Shared login across slots** — `~/.claude/.credentials.json` is bind-mounted into every slot so you authenticate once; set `CLAUDEBOX_SHARE_CREDENTIALS=false` for a clean-auth slot
-- **Seeded identity** — `~/.claude.json` (user identity + onboarding flag) is copied into new slots once, so fresh slots don't trigger onboarding
-- **Live seed-file sync** — edits to `source/claude/CLAUDE.md` / `settings.json` propagate into every slot (new and existing) on next launch, preserving per-slot credentials and history
+- **Log in once, use every slot** — the host's `~/.claude/.credentials.json` (OAuth token) is bind-mounted live into every slot. When a token refresh happens in any slot, all the others pick it up too. Opt out per-slot with `CLAUDEBOX_SHARE_CREDENTIALS=false`
+- **No onboarding on fresh slots** — `~/.claude.json` holds your Claude identity plus the "first-run done" flag *and* per-slot state (chat history, MCP, etc.). It's copied from the host into each new slot once at creation, then left alone — so slots start logged-in but keep their own history
+- **Default config stays in sync** — the repo ships seed files at `source/claude/CLAUDE.md` and `source/claude/settings.json` (the defaults every slot starts with). Editing those propagates the change into every slot — new *and* existing — on next launch, without touching per-slot credentials or history
 - **Shared auto-memory across slots** — `~/.claude/projects/-workspace/memory/` is bind-mounted from a project-wide `shared-memory/` dir, so skills, user profile, feedback, and decisions carry over between slots; existing memory in the largest slot is auto-promoted on first mount so no prior learning is lost. Set `CLAUDEBOX_SHARE_MEMORY=false` to opt out
 
 **Agent auto-improvement (Hermes-inspired):**
@@ -152,6 +153,10 @@ This fork includes the following changes over [upstream](https://github.com/RchG
   - **Auto-memory** — declarative facts (user profile, feedback, project state, external references) persisted across sessions under `~/.claude/projects/-workspace/memory/`, now shared across slots
   - **Versioned agent state** — nested `git init` inside `/workspace/.claude/` gives diff / blame / rollback for skills, plans, decisions, and CLAUDE.md itself, without leaking to the public repo
   - **Self-nudge at task close** — the agent pauses at task end to capture non-obvious learnings before context drops
+- **Host `~/.claude` skills in containers** — the host `~/.claude/` directory is bind-mounted read-only and each non-system subdirectory (skipping `projects`, `sessions`, `commands`, `statsig`, `todos`, `keys`, `mcp`) is symlinked into the container's `~/.claude/`, so globally installed Claude Code skills (e.g. `get-shit-done`) work inside every slot without reinstalling. A host-level `CLAUDE.md` is also symlinked in if the slot doesn't already have one. Set `CLAUDEBOX_NO_HOST_SKILLS=true` to opt out. Complements the per-project skills under `/workspace/.claude/skills/` — different scope, different mutability (host = read-only globals, project = writable agent notes)
+
+**Cross-slot session picker:**
+- **`claudebox resume`** — fzf-based picker that lists Claude sessions across every slot of the current project, with last-modified date, size, and a live indicator for sessions whose container is still running. Flags: `-n NUM` to limit the list (default 50), `-a` for all sessions, `-A` to include every project, `-d` for debug output. Works on both Linux and macOS (`stat`/`date` shims baked in)
 
 **Alternative API providers:**
 - Custom environment file (`~/.claudebox/env`) loaded via Docker `--env-file` — switch to OpenRouter, local proxies, etc. without touching source
@@ -162,11 +167,9 @@ This fork includes the following changes over [upstream](https://github.com/RchG
 - **Wolfram** — Wolfram Engine 14 with persistent licensing across containers
 - **wolfram-cloud** — lightweight variant using `wolframclient` against Wolfram Cloud
 
-**Bug fixes (selected):**
-- Missing `||` operator in Dockerfile placeholder guard (`main.sh`)
-- `local` keyword used outside functions in `docker-entrypoint`
-- `/dev/tty` busy error in Wolfram installer under BuildKit
-- Permission drift on container-owned files under rootless Docker
+**Upstream bug fixes (not yet in [RchGrav/claudebox](https://github.com/RchGrav/claudebox)):**
+- Missing `||` operator in Dockerfile placeholder guard (`main.sh`) — unreplaced `{{LABELS}}` placeholders were never detected
+- `local` keyword used outside functions in `docker-entrypoint` — caused container startup failure on venv setup and Python profile paths (lines 86, 109, 141)
 
 #### Quick Install (Debian 12, no sudo required)
 
