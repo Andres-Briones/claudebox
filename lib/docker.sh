@@ -332,11 +332,19 @@ run_claudebox_container() {
 
     # Fix permissions for rootless Docker before any bootstrap reads.
     # In rootless mode, the container's claude user (UID 1000) maps to a
-    # subordinate UID on the host. Files created by the container are owned
-    # by that subordinate UID, so we need rootlesskit to chmod them — and
-    # this MUST run before the credential / identity / shared-memory
-    # bootstraps below try to `cp` from existing slots, otherwise those
-    # reads fail with EACCES and `set -e` aborts the script.
+    # subordinate UID on the host. Files created by the container under
+    # ~/.claudebox/<projhash>/ end up owned by that subuid, so we need
+    # rootlesskit to chmod them before the credential / identity / shared-
+    # memory bootstraps below try to `cp` from existing slots — otherwise
+    # those reads fail with EACCES and `set -e` aborts the script.
+    #
+    # Scope is limited to PROJECT_PARENT_DIR (the claudebox state dir for
+    # this project). PROJECT_DIR is the user's repo, mounted as /workspace;
+    # sweeping 777 across it flipped tracked file modes (644->755) on every
+    # launch, polluting `git status` and breaking mode-sensitive tooling.
+    # The user owns their repo files already, and the 0700 gate on
+    # ~/.claudebox (set by harden_host_perms) is the security boundary —
+    # the inner mode on claudebox state files is moot from outside.
     if docker info 2>/dev/null | grep -q rootless; then
         local rk=""
         if command -v rootlesskit >/dev/null 2>&1; then
@@ -345,16 +353,13 @@ run_claudebox_container() {
             rk="$HOME/bin/rootlesskit"
         fi
 
-        local dir
-        for dir in "$PROJECT_PARENT_DIR" "$PROJECT_DIR"; do
-            if [[ -n "$dir" ]] && [[ -d "$dir" ]]; then
-                if [[ -n "$rk" ]]; then
-                    $rk chmod -R 777 "$dir" 2>/dev/null || true
-                else
-                    chmod -R 777 "$dir" 2>/dev/null || true
-                fi
+        if [[ -n "$PROJECT_PARENT_DIR" ]] && [[ -d "$PROJECT_PARENT_DIR" ]]; then
+            if [[ -n "$rk" ]]; then
+                $rk chmod -R 777 "$PROJECT_PARENT_DIR" 2>/dev/null || true
+            else
+                chmod -R 777 "$PROJECT_PARENT_DIR" 2>/dev/null || true
             fi
-        done
+        fi
     fi
 
     # Share host login so each slot doesn't re-authenticate.
