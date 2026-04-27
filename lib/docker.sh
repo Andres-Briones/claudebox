@@ -312,6 +312,33 @@ run_claudebox_container() {
         docker_args+=(-v "$shared_memory":/home/$DOCKER_USER/.claude/projects/-workspace/memory)
     fi
 
+    # Fix permissions for rootless Docker before any bootstrap reads.
+    # In rootless mode, the container's claude user (UID 1000) maps to a
+    # subordinate UID on the host. Files created by the container are owned
+    # by that subordinate UID, so we need rootlesskit to chmod them — and
+    # this MUST run before the credential / identity / shared-memory
+    # bootstraps below try to `cp` from existing slots, otherwise those
+    # reads fail with EACCES and `set -e` aborts the script.
+    if docker info 2>/dev/null | grep -q rootless; then
+        local rk=""
+        if command -v rootlesskit >/dev/null 2>&1; then
+            rk="rootlesskit"
+        elif [[ -x "$HOME/bin/rootlesskit" ]]; then
+            rk="$HOME/bin/rootlesskit"
+        fi
+
+        local dir
+        for dir in "$PROJECT_PARENT_DIR" "$PROJECT_DIR"; do
+            if [[ -n "$dir" ]] && [[ -d "$dir" ]]; then
+                if [[ -n "$rk" ]]; then
+                    $rk chmod -R 777 "$dir" 2>/dev/null || true
+                else
+                    chmod -R 777 "$dir" 2>/dev/null || true
+                fi
+            fi
+        done
+    fi
+
     # Share host login so each slot doesn't re-authenticate.
     # Credentials are bind-mounted live (token refresh in one slot updates all).
     # Identity file (.claude.json) is seeded per slot then diverges, so history
@@ -320,10 +347,19 @@ run_claudebox_container() {
     if [[ "${CLAUDEBOX_SHARE_CREDENTIALS:-true}" == "true" ]]; then
         # Bootstrap: if host files are missing but a previous slot already
         # logged in, promote that slot's credentials + identity file to the
-        # host so every future slot picks them up.
+        # host so every future slot picks them up. The rootlesskit chmod
+        # above should make subuid-owned files readable, but iterate
+        # candidates and skip unreadable ones in case chmod didn't take
+        # (e.g. rootlesskit unavailable, file outside subuid range).
         if [[ ! -f "$HOME/.claude/.credentials.json" ]]; then
-            local promoted
-            promoted=$(find "$PROJECT_PARENT_DIR" -maxdepth 3 -path '*/.claude/.credentials.json' -print -quit 2>/dev/null || true)
+            local promoted=""
+            local candidate
+            while IFS= read -r -d '' candidate; do
+                if [[ -r "$candidate" ]]; then
+                    promoted=$candidate
+                    break
+                fi
+            done < <(find "$PROJECT_PARENT_DIR" -maxdepth 3 -path '*/.claude/.credentials.json' -print0 2>/dev/null)
             if [[ -n "$promoted" ]]; then
                 mkdir -p "$HOME/.claude"
                 cp "$promoted" "$HOME/.claude/.credentials.json"
@@ -331,8 +367,14 @@ run_claudebox_container() {
             fi
         fi
         if [[ ! -f "$HOME/.claude.json" ]]; then
-            local promoted_json
-            promoted_json=$(find "$PROJECT_PARENT_DIR" -maxdepth 2 -name '.claude.json' -print -quit 2>/dev/null || true)
+            local promoted_json=""
+            local candidate_json
+            while IFS= read -r -d '' candidate_json; do
+                if [[ -r "$candidate_json" ]]; then
+                    promoted_json=$candidate_json
+                    break
+                fi
+            done < <(find "$PROJECT_PARENT_DIR" -maxdepth 2 -name '.claude.json' -print0 2>/dev/null)
             if [[ -n "$promoted_json" ]]; then
                 cp "$promoted_json" "$HOME/.claude.json"
             fi
@@ -554,30 +596,6 @@ run_claudebox_container() {
     if [[ ${#container_args[@]} -gt 0 ]]; then
         docker_args+=("${container_args[@]}")
     fi
-    
-    # Fix permissions for rootless Docker
-    # In rootless mode, the container's claude user (UID 1000) maps to a
-    # subordinate UID on the host. Files created by the container are owned
-    # by that subordinate UID, so we need rootlesskit to chmod them.
-    if docker info 2>/dev/null | grep -q rootless; then
-        local rk=""
-        if command -v rootlesskit >/dev/null 2>&1; then
-            rk="rootlesskit"
-        elif [[ -x "$HOME/bin/rootlesskit" ]]; then
-            rk="$HOME/bin/rootlesskit"
-        fi
-
-        local dir
-        for dir in "$PROJECT_PARENT_DIR" "$PROJECT_DIR"; do
-            if [[ -n "$dir" ]] && [[ -d "$dir" ]]; then
-                if [[ -n "$rk" ]]; then
-                    $rk chmod -R 777 "$dir" 2>/dev/null || true
-                else
-                    chmod -R 777 "$dir" 2>/dev/null || true
-                fi
-            fi
-        done
-    fi
 
     # Run the container
     if [[ "$VERBOSE" == "true" ]]; then
@@ -585,7 +603,43 @@ run_claudebox_container() {
     fi
     docker run "${docker_args[@]}"
     local exit_code=$?
-    
+
+    # Post-run: promote freshly-written slot credentials/identity to host
+    # home so future projects (different PROJECT_PARENT_DIR) get the live
+    # bind-mount on their first slot. Without this, the bootstrap only
+    # populates host home on the SECOND slot of the SAME project — and a
+    # fresh project always requires re-login. The bind mount at runtime
+    # is gated on the host file existing, so first-ever logins write to
+    # the slot only; this post-run step bridges that gap.
+    if [[ "${CLAUDEBOX_SHARE_CREDENTIALS:-true}" == "true" ]]; then
+        # In rootless mode the slot files were just written by the
+        # container's claude user (subuid on host). Re-chmod so we can
+        # read them — the earlier chmod ran before docker run and didn't
+        # cover files created during the session.
+        if docker info 2>/dev/null | grep -q rootless; then
+            local rk_post=""
+            if command -v rootlesskit >/dev/null 2>&1; then
+                rk_post="rootlesskit"
+            elif [[ -x "$HOME/bin/rootlesskit" ]]; then
+                rk_post="$HOME/bin/rootlesskit"
+            fi
+            if [[ -n "$rk_post" ]] && [[ -d "$PROJECT_SLOT_DIR" ]]; then
+                $rk_post chmod -R 777 "$PROJECT_SLOT_DIR" 2>/dev/null || true
+            fi
+        fi
+
+        if [[ ! -f "$HOME/.claude/.credentials.json" ]] \
+           && [[ -r "$PROJECT_SLOT_DIR/.claude/.credentials.json" ]]; then
+            mkdir -p "$HOME/.claude"
+            cp "$PROJECT_SLOT_DIR/.claude/.credentials.json" "$HOME/.claude/.credentials.json"
+            chmod 600 "$HOME/.claude/.credentials.json"
+        fi
+        if [[ ! -f "$HOME/.claude.json" ]] \
+           && [[ -r "$PROJECT_SLOT_DIR/.claude.json" ]]; then
+            cp "$PROJECT_SLOT_DIR/.claude.json" "$HOME/.claude.json"
+        fi
+    fi
+
     return $exit_code
 }
 
