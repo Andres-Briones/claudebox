@@ -132,12 +132,30 @@ force_rm_rf() {
 #   args: Commands to pass to claude in container
 # Returns: Exit code from container
 # Note: Handles all mounting, environment setup, and security configuration
+
+# Lock host-side state to owner-only (mode 0700) so other users on a shared
+# machine cannot traverse into ~/.claude or ~/.claudebox to read credentials
+# or session data. With these top-level dirs at 0700, any inner perms (e.g.
+# the rootlesskit `chmod -R 777` we use for host<->subuid file sharing in
+# rootless mode) become unreachable from other users — they hit the gate
+# at the parent. Self-heals on every launch in case anything loosened them.
+harden_host_perms() {
+    local d
+    for d in "$HOME/.claudebox" "$HOME/.claude"; do
+        if [[ -d "$d" ]]; then
+            chmod 700 "$d" 2>/dev/null || true
+        fi
+    done
+}
+
 run_claudebox_container() {
     local container_name="$1"
     local run_mode="$2"  # "interactive", "detached", "pipe", or "attached"
     shift 2
     local container_args=("$@")
-    
+
+    harden_host_perms
+
     # Handle "attached" mode - start detached, wait, then attach
     if [[ "$run_mode" == "attached" ]]; then
         # Start detached
@@ -340,9 +358,12 @@ run_claudebox_container() {
     fi
 
     # Share host login so each slot doesn't re-authenticate.
-    # Credentials are bind-mounted live (token refresh in one slot updates all).
-    # Identity file (.claude.json) is seeded per slot then diverges, so history
-    # and MCP state stay per-slot.
+    # Credentials and identity are SLOT-LOCAL — never bind-mounted as single
+    # files. Reason: Claude CLI writes credentials atomically (write *.tmp,
+    # rename), and a rename targeting a single-file bind-mount path either
+    # fails (EBUSY/EXDEV) or detaches the mount, leaving the host file
+    # stale. Instead we sync host <-> slot at launch and exit, so refreshes
+    # converge across slots on each restart.
     # Set CLAUDEBOX_SHARE_CREDENTIALS=false to force a clean-auth slot.
     if [[ "${CLAUDEBOX_SHARE_CREDENTIALS:-true}" == "true" ]]; then
         # Bootstrap: if host files are missing but a previous slot already
@@ -362,6 +383,7 @@ run_claudebox_container() {
             done < <(find "$PROJECT_PARENT_DIR" -maxdepth 3 -path '*/.claude/.credentials.json' -print0 2>/dev/null)
             if [[ -n "$promoted" ]]; then
                 mkdir -p "$HOME/.claude"
+                chmod 700 "$HOME/.claude"
                 cp "$promoted" "$HOME/.claude/.credentials.json"
                 chmod 600 "$HOME/.claude/.credentials.json"
             fi
@@ -379,15 +401,26 @@ run_claudebox_container() {
                 cp "$promoted_json" "$HOME/.claude.json"
             fi
         fi
-        if [[ -f "$HOME/.claude/.credentials.json" ]]; then
-            docker_args+=(-v "$HOME/.claude/.credentials.json":/home/$DOCKER_USER/.claude/.credentials.json)
+
+        # Seed/refresh slot credentials from host. -nt is true when host
+        # exists and slot doesn't, OR host is newer — covers both first-run
+        # seeding and pulling in another slot's recently-promoted refresh.
+        # No chmod on the slot file: in rootless mode it may be owned by
+        # the container's subuid (so chmod from the host EPERMs), and in
+        # any case the security boundary is ~/.claudebox at 0700 — the
+        # parent-dir traversal block makes the inner file's mode moot.
+        if [[ -f "$HOME/.claude/.credentials.json" ]] \
+           && [[ "$HOME/.claude/.credentials.json" -nt "$PROJECT_SLOT_DIR/.claude/.credentials.json" ]]; then
+            mkdir -p "$PROJECT_SLOT_DIR/.claude"
+            cp "$HOME/.claude/.credentials.json" "$PROJECT_SLOT_DIR/.claude/.credentials.json"
         fi
     fi
 
     # Seed a fresh slot's .claude.json from the host so Claude recognises the
     # user (identity + onboarding flag live in ~/.claude.json, not in
-    # .credentials.json). History/MCP/etc. stay per-slot because we only seed
-    # once — subsequent runs use the slot's own copy.
+    # .credentials.json). Only seeds when the slot has no copy yet — once a
+    # slot has its own .claude.json, in-session edits stay per-slot
+    # (history/MCP state).
     if [[ "${CLAUDEBOX_SHARE_CREDENTIALS:-true}" == "true" ]] \
        && [[ ! -f "$PROJECT_SLOT_DIR/.claude.json" ]] \
        && [[ -f "$HOME/.claude.json" ]]; then
@@ -628,14 +661,21 @@ run_claudebox_container() {
             fi
         fi
 
-        if [[ ! -f "$HOME/.claude/.credentials.json" ]] \
-           && [[ -r "$PROJECT_SLOT_DIR/.claude/.credentials.json" ]]; then
+        # Promote any token refresh / identity update written during the
+        # session back to host home, so the next launch of any slot picks
+        # it up. -nt is true when slot exists and host doesn't, OR slot is
+        # newer than host — so this both bootstraps a missing host file
+        # AND propagates refreshes (the previous `! -f host` gate skipped
+        # promotion whenever host already had a file, even a stale one).
+        if [[ -r "$PROJECT_SLOT_DIR/.claude/.credentials.json" ]] \
+           && [[ "$PROJECT_SLOT_DIR/.claude/.credentials.json" -nt "$HOME/.claude/.credentials.json" ]]; then
             mkdir -p "$HOME/.claude"
+            chmod 700 "$HOME/.claude"
             cp "$PROJECT_SLOT_DIR/.claude/.credentials.json" "$HOME/.claude/.credentials.json"
             chmod 600 "$HOME/.claude/.credentials.json"
         fi
-        if [[ ! -f "$HOME/.claude.json" ]] \
-           && [[ -r "$PROJECT_SLOT_DIR/.claude.json" ]]; then
+        if [[ -r "$PROJECT_SLOT_DIR/.claude.json" ]] \
+           && [[ "$PROJECT_SLOT_DIR/.claude.json" -nt "$HOME/.claude.json" ]]; then
             cp "$PROJECT_SLOT_DIR/.claude.json" "$HOME/.claude.json"
         fi
     fi

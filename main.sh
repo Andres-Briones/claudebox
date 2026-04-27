@@ -427,6 +427,13 @@ main() {
     if [[ ! -d "$HOME/.claudebox" ]]; then
         mkdir -p "$HOME/.claudebox"
     fi
+    # Lock to owner-only on every launch so other users on a shared host
+    # can't traverse in to read credentials/session state. Self-heals if
+    # anything (including a previous claudebox version) loosened it.
+    chmod 700 "$HOME/.claudebox" 2>/dev/null || true
+    if [[ -d "$HOME/.claude" ]]; then
+        chmod 700 "$HOME/.claude" 2>/dev/null || true
+    fi
     if [[ ! -w "$HOME/.claudebox" ]]; then
         warn "Fixing .claudebox permissions..."
         sudo chown -R "$USER:$USER" "$HOME/.claudebox" || true
