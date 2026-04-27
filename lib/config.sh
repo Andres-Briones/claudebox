@@ -21,7 +21,7 @@ get_profile_packages() {
         c) echo "gdb valgrind clang clang-format clang-tidy cppcheck doxygen libboost-all-dev libcmocka-dev libcmocka0 lcov libncurses5-dev libncursesw5-dev" ;;
         openwrt) echo "rsync libncurses5-dev zlib1g-dev gawk gettext xsltproc libelf-dev ccache subversion swig time qemu-system-arm qemu-system-aarch64 qemu-system-mips qemu-system-x86 qemu-utils" ;;
         rust) echo "" ;;  # Rust installed via rustup
-        python) echo "" ;;  # Managed via uv
+        python) echo "python3 python3-full python3-venv" ;;
         go) echo "" ;;  # Installed from tarball
         flutter) echo "" ;;  # Installed from source
         javascript) echo "" ;;  # Installed via nvm
@@ -248,8 +248,7 @@ EOF
 
 get_profile_python() {
     cat << 'EOF'
-# Python profile - uv already installed in base image
-# Python venv and dev tools are managed via entrypoint flag system
+RUN ~/.local/bin/uv python install 3.12 3.11
 EOF
 }
 

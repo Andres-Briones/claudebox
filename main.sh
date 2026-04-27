@@ -375,7 +375,7 @@ main() {
                 
                 # Separate Python-only profiles from Docker-affecting profiles
                 local docker_profiles=()
-                local python_only_profiles=("python" "ml" "datascience")
+                local python_only_profiles=("ml" "datascience")
                 
                 for profile in "${current_profiles[@]}"; do
                     local is_python_only=false
@@ -574,7 +574,7 @@ build_docker_image() {
         
         # Calculate hash only for Docker-affecting profiles
         local docker_profiles=()
-        local python_only_profiles=("python" "ml" "datascience")
+        local python_only_profiles=("ml" "datascience")
         
         for profile in "${current_profiles[@]}"; do
             local is_python_only=false
