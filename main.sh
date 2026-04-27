@@ -272,7 +272,29 @@ main() {
     
     # Get the slot to use (might be empty)
     project_folder_name=$(get_project_folder_name "$PROJECT_DIR")
-    
+
+    # Auto-create a slot when launching Claude interactively and no free slot
+    # exists (either zero slots, or every slot is currently running). Ask for
+    # confirmation when stdin is a terminal; default to yes.
+    if [[ "$project_folder_name" == "NONE" ]] \
+       && [[ "$cmd_requirements" == "docker" ]] \
+       && [[ -z "${CLI_SCRIPT_COMMAND}" ]]; then
+        local reply="y"
+        if [[ -t 0 ]]; then
+            printf 'No free slot available. Create one and launch? [Y/n] ' >&2
+            IFS= read -r reply || reply="y"
+            reply="${reply:-y}"
+        fi
+        case "$reply" in
+            y|Y|yes|YES|Yes)
+                project_folder_name=$(create_container "$PROJECT_DIR")
+                ;;
+            *)
+                exit 0
+                ;;
+        esac
+    fi
+
     # Early exit if command needs Docker but no slots exist
     if [[ "$project_folder_name" == "NONE" ]] && [[ "$cmd_requirements" == "docker" ]]; then
         show_no_slots_menu
