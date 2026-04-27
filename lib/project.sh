@@ -110,6 +110,10 @@ init_slot_dir() {
     local dir="$1"
     mkdir -p "$dir"
     mkdir -p "$dir/.claude"
+    # Pre-create so a later shared-memory bind-mount can't trick Docker into
+    # auto-creating this path as root and locking Claude out of writing
+    # session history.
+    mkdir -p "$dir/.claude/projects/-workspace"
     sync_claude_seed_files "$dir"
     mkdir -p "$dir/.config"
     mkdir -p "$dir/.cache"

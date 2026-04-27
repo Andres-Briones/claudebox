@@ -77,6 +77,53 @@ docker_exec_user() {
     docker exec -u "$DOCKER_USER" "$@"
 }
 
+# Force-remove a path even when Docker auto-created intermediate dirs the
+# host user can't traverse (rootful: owned by real root; rootless: owned by
+# subordinate UIDs). Tries plain rm first; on failure falls back to a
+# throwaway container that inherits whatever privilege Docker used to make
+# the path in the first place. Either path works without sudo.
+force_rm_rf() {
+    local target="$1"
+    if [[ -z "$target" ]] || [[ ! -e "$target" ]]; then
+        return 0
+    fi
+
+    if rm -rf "$target" 2>/dev/null; then
+        return 0
+    fi
+
+    local parent name
+    parent=$(dirname "$target")
+    name=$(basename "$target")
+
+    # Pick a locally-available image that has /bin/sh.
+    local img=""
+    local candidate
+    for candidate in claudebox busybox alpine; do
+        if docker image inspect "$candidate" >/dev/null 2>&1; then
+            img="$candidate"
+            break
+        fi
+    done
+    if [[ -z "$img" ]]; then
+        candidate=$(docker images --filter 'reference=claudebox-*' --format '{{.Repository}}:{{.Tag}}' 2>/dev/null | head -1)
+        if [[ -n "$candidate" ]]; then
+            img="$candidate"
+        fi
+    fi
+    if [[ -z "$img" ]]; then
+        if docker pull busybox >/dev/null 2>&1; then
+            img="busybox"
+        fi
+    fi
+    if [[ -z "$img" ]]; then
+        return 1
+    fi
+
+    docker run --rm --entrypoint sh -v "$parent":/work "$img" \
+        -c 'rm -rf "/work/$1"' -- "$name" >/dev/null 2>&1
+}
+
 # run_claudebox_container - Main entry point for container execution
 # Usage: run_claudebox_container <container_name> <mode> [args...]
 # Args:
@@ -227,6 +274,12 @@ run_claudebox_container() {
     sync_claude_seed_files "$PROJECT_SLOT_DIR"
 
     docker_args+=(-v "$PROJECT_SLOT_DIR/.claude":/home/$DOCKER_USER/.claude)
+
+    # Pre-create projects/-workspace/ so Docker doesn't auto-create it as
+    # root when the shared-memory bind-mount lands on a fresh slot. Without
+    # this, Claude (running as the unprivileged container user) can't write
+    # session history into the root-owned dir, and `resume` finds nothing.
+    mkdir -p "$PROJECT_SLOT_DIR/.claude/projects/-workspace"
 
     # Share auto-memory across all slots of this project so skills, user
     # profile, feedback, and decisions carry over between slots. Bind-mount
@@ -575,4 +628,4 @@ run_docker_build() {
         -f "$1" -t "$IMAGE_NAME" "$2" || error "Docker build failed"
 }
 
-export -f check_docker install_docker configure_docker_nonroot docker_exec_root docker_exec_user run_claudebox_container check_container_exists run_docker_build
+export -f check_docker install_docker configure_docker_nonroot docker_exec_root docker_exec_user run_claudebox_container check_container_exists run_docker_build force_rm_rf

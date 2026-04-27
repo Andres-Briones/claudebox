@@ -153,7 +153,7 @@ _cmd_revoke() {
                     if [[ "$VERBOSE" == "true" ]]; then
                         echo "[DEBUG] Removing slot $idx: $dir" >&2
                     fi
-                    if rm -rf "$dir"; then
+                    if force_rm_rf "$dir"; then
                         ((removed_count++)) || true
                     else
                         error "Failed to remove slot $idx: $dir"
@@ -202,7 +202,9 @@ _cmd_revoke() {
             fi
             
             # Remove the slot
-            rm -rf "$dir"
+            if ! force_rm_rf "$dir"; then
+                error "Failed to remove slot $max: $dir"
+            fi
             write_counter "$parent" $((max - 1))
         fi
         

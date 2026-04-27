@@ -182,7 +182,7 @@ _clean_project() {
             local slot_name=$(basename "$slot_dir")
             # Skip profiles.ini and other project-level files
             if [[ "$slot_name" =~ ^[a-f0-9]{8}$ ]]; then
-                rm -rf "$slot_dir"
+                force_rm_rf "$slot_dir"
                 ((slots_removed++)) || true
             fi
         fi
@@ -202,7 +202,7 @@ _clean_project() {
     
     # Remove the entire project directory
     if [[ -d "$parent_dir" ]]; then
-        rm -rf "$parent_dir"
+        force_rm_rf "$parent_dir"
         success "  Removed project directory and $slots_removed slots"
     else
         info "  No project directory found"
