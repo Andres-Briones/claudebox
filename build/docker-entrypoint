@@ -256,6 +256,33 @@ if [ -d "/tmp/host-claude-home" ]; then
     fi
 fi
 
+# Install a 'claude' shell wrapper (idempotent) that warns when claude is
+# launched from a non-/workspace dir. Memory writes from a non-/workspace
+# cwd land in ~/.claude/projects/<derived-slug>/memory/, bypassing the
+# cross-slot shared-memory bind mount which is hardcoded to -workspace in
+# lib/docker.sh.
+for shell_rc in /home/DOCKERUSER/.zshrc /home/DOCKERUSER/.bashrc; do
+    if [ ! -f "$shell_rc" ]; then
+        continue
+    fi
+    if grep -q 'claudebox-pwd-check' "$shell_rc"; then
+        continue
+    fi
+    cat >> "$shell_rc" << 'PWDCHECK'
+
+# claudebox-pwd-check: warn when claude is launched from a non-/workspace dir
+# (memory writes would bypass the cross-slot shared-memory bind mount).
+claude() {
+    if [ "$PWD" != "/workspace" ]; then
+        local slug
+        slug=$(printf '%s' "$PWD" | sed 's|/|-|g')
+        printf '\033[33m[claudebox] launching claude from %s — memory writes will go to ~/.claude/projects/%s/memory/ and bypass the shared-memory bind mount. cd /workspace first if you need cross-slot persistence.\033[0m\n' "$PWD" "$slug" >&2
+    fi
+    command claude "$@"
+}
+PWDCHECK
+done
+
 # No need for complex exit handlers - just copy after claude exits
 
 if [[ "${SHELL_MODE:-false}" == "true" ]]; then
