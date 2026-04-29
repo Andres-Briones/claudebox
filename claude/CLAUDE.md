@@ -69,60 +69,13 @@ Layout A has no inner stream — the outer rules apply to everything.
 
 ### Universal rules
 
-- Never commit unless I ask. When I do, atomic commits with a short message explaining the *why*.
+- For *private* commits (anything pushed to `private`): commit often the changes you made ! No need my confirmation.
 - For *public* commits (anything pushed to `origin`): the full pre-commit gate must pass. Fix at the source; never `--no-verify`.
+- For *public* : never commit unless I ask. When I do, atomic commits with a short message explaining the *why*.
 - No "Generated with Claude Code" footers or co-author lines.
 - Don't force-push public history, amend published commits, or delete branches without confirmation.
 
-### Remote naming
-
-- `private` — your sync server. Always set up.
-- `origin` — only on inner repos with public history (e.g. GitHub).
-
-Per-repo setup:
-```
-git remote add private <ssh-url>
-```
-On the server (once per repo, via SSH):
-```
-git config receive.denyCurrentBranch updateInstead
-```
-This makes the server's working tree update automatically on push, so you don't need to re-pull when you SSH in.
-
-## Multi-machine sync
-
-You typically work in two locations sharing one private sync server. The
-server is the **hub**: it receives pushes, serves pulls, never pushes itself.
-Only the laptops/clients run sync scripts.
-
-### Scripts
-
-Both live at `/workspace/.claude/scripts/`:
-
-- `claude-handoff.sh [optional message]` — walks every git repo under `/workspace/`, commits any WIP, pushes to `private`. Run **before stepping away** from a machine.
-- `claude-resume.sh` — walks every git repo under `/workspace/`, fetches from `private`, resets the working tree to `private/<current-branch>`. Refuses if uncommitted changes exist. Run **when arriving** at a machine.
-
-Both skip repos that don't have a `private` remote, so a mixed setup (e.g. an inner repo whose `private` you haven't configured yet) is safe.
-
-### The flow
-
-```
-LAPTOP                                      SERVER
-─────                                       ──────
-work, edit, …
-claude-handoff   ──push──►                  working tree auto-updates
-                                            (via receive.denyCurrentBranch=updateInstead)
-
-                                            SSH in, work, commit normally.
-                                            (server doesn't push.)
-
-claude-resume    ◄──pull──                  
-work, edit, …
-```
-
-The server runs nothing. Its tree updates from your push, its commits are pulled by `claude-resume`.
-
-### Cleaning up wip before going public (Layout B only)
+## Cleaning up wip before going public (Layout B only)
 
 When code in an inner repo is ready to ship:
 
@@ -223,9 +176,6 @@ non-obvious about **the user**, **the project**, or produce a **reusable
 approach**? If yes, write the relevant memory (user / feedback / project /
 reference) or skill *before* closing out. In-flight noticing misses things;
 a deliberate end-of-task check catches them.
-
-Then: commit meaningful agent-state changes to the outer repo, and run
-`claude-handoff` if you're about to switch machines.
 
 Skip the nudge for trivial tasks (one-line edits, pure Q&A with no new
 learning).
