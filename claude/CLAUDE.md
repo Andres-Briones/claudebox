@@ -74,6 +74,7 @@ Layout A has no inner stream — the outer rules apply to everything.
 - For *public* : never commit unless I ask. When I do, atomic commits with a short message explaining the *why*.
 - No "Generated with Claude Code" footers or co-author lines.
 - Don't force-push public history, amend published commits, or delete branches without confirmation.
+- `git config --global --add safe.directory <path>` is pre-approved — run it without asking when git refuses with "dubious ownership". This is the only sanctioned exception to the otherwise no-git-config rule.
 
 ## Cleaning up wip before going public (Layout B only)
 
