@@ -247,9 +247,17 @@ EOF
 }
 
 get_profile_python() {
-    cat << 'EOF'
+    local packages=$(get_profile_packages "python")
+    {
+        if [[ -n "$packages" ]]; then
+            printf 'RUN apt-get update && apt-get install -y %s && apt-get clean\n' "$packages"
+        fi
+        cat << 'EOF'
+USER claude
 RUN ~/.local/bin/uv python install 3.12 3.11
+USER root
 EOF
+    }
 }
 
 get_profile_go() {
