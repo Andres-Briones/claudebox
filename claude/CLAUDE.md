@@ -150,18 +150,31 @@ so future sessions start faster. Complements auto-memory (which stores
 - **When to write a skill**: after finishing a task that used ~5+ tool calls
   *and* the approach would plausibly help in a future session. Skip for
   one-off debugging where the only takeaway is "read the code."
-- **Where**: `/workspace/.claude/skills/<slug>.md`. Tracked by the outer git.
-- **Manifest**: `/workspace/.claude/skills/README.md` — one line per skill:
-  *trigger (specific, not vague), what it does, last updated*. A skill
-  without a manifest entry is invisible.
-- **Trigger must be specific.** "Debugging stuff" won't match; "test passes
-  locally but fails in CI" will.
+- **Where**:
+  - `~/.claude/skills/<name>/SKILL.md` for cross-project skills — Claude
+    Code's default user-scope path, auto-symlinked into every claudebox
+    container by the entrypoint, so writes from the host reach every project.
+  - `/workspace/.claude/skills/<name>/SKILL.md` for skills specific to one
+    project (auto-loaded for that project only).
+  - Each skill is a *directory* containing `SKILL.md` (required) plus any
+    supporting files. Single-file `.md` skills are not recognized.
+- **SKILL.md format**: YAML frontmatter (`name`, `description`) followed by
+  the body. Claude Code triggers a skill by matching its description against
+  the current task — make the description specific, not vague.
+
+  ```
+  ---
+  name: my-skill
+  description: When test passes locally but fails in CI, ...
+  ---
+
+  # body
+  ```
 - **What to capture**: the approach, edge cases hit, domain knowledge
   discovered, the shape of the investigation. *Not* specific file paths or
   a play-by-play of tool calls — those rot fast.
-- **Before starting similar work**: check the manifest for matching triggers.
-  If a skill applies but is incomplete or wrong, *edit it in place* — don't
-  write a near-duplicate.
+- **Edit in place, don't duplicate.** If an existing skill applies but is
+  incomplete or wrong, fix it — don't write a near-duplicate.
 - **Delete skills that proved wrong.** A misleading skill is worse than none.
 - **Skills vs. auto-memory exclusions**: auto-memory forbids saving code
   patterns / architecture (derivable from the repo). Skills are procedural
@@ -175,7 +188,7 @@ script — don't wait to be asked. A 20-line script beats re-reading and
 re-typing prose every time.
 
 - **Where**: `/workspace/.claude/scripts/<slug>.sh` (or appropriate extension).
-  Tracked by the outer git.
+  Tracked by the workspace git.
 - **Manifest**: `/workspace/.claude/scripts/README.md` — one line per script:
   *what it does, when to run it, last verified YYYY-MM-DD*. A script
   without a manifest entry is invisible.
@@ -189,7 +202,7 @@ re-typing prose every time.
   Cross-reference them.
 
 ## Plans & project status
-Agent state lives under `/workspace/` and is tracked by the outer git. One
+Agent state lives under `/workspace/` and is tracked by the workspace git. One
 predictable place per category so state doesn't drift:
 
 - `/workspace/STATUS.md` — project heartbeat (done / in-progress / blocked / next).

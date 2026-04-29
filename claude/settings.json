@@ -1,3 +1,19 @@
 {
-  "includeCoAuthoredBy": false
+  "includeCoAuthoredBy": false,
+  "permissions": {
+    "allow": [
+      "Edit(/workspace/.claude/scripts/**)",
+      "Edit(/workspace/.claude/plans/**)",
+      "Edit(/workspace/.claude/decisions/**)",
+      "Edit(/workspace/.claude/skills/**)",
+      "Write(/workspace/.claude/scripts/**)",
+      "Write(/workspace/.claude/plans/**)",
+      "Write(/workspace/.claude/decisions/**)",
+      "Write(/workspace/.claude/skills/**)",
+      "MultiEdit(/workspace/.claude/scripts/**)",
+      "MultiEdit(/workspace/.claude/plans/**)",
+      "MultiEdit(/workspace/.claude/decisions/**)",
+      "MultiEdit(/workspace/.claude/skills/**)"
+    ]
+  }
 }
