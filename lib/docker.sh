@@ -275,11 +275,12 @@ run_claudebox_container() {
 
     docker_args+=(-v "$PROJECT_SLOT_DIR/.claude":/home/$DOCKER_USER/.claude)
 
-    # Pre-create projects/-workspace/ so Docker doesn't auto-create it as
-    # root when the shared-memory bind-mount lands on a fresh slot. Without
-    # this, Claude (running as the unprivileged container user) can't write
-    # session history into the root-owned dir, and `resume` finds nothing.
-    mkdir -p "$PROJECT_SLOT_DIR/.claude/projects/-workspace"
+    # Pre-create projects/-workspace/memory/ so Docker doesn't auto-create
+    # either dir as root when the shared-memory bind-mount lands on a fresh
+    # slot. Without this, Claude (running as the unprivileged container user)
+    # can't write session history (-workspace/) or, if sharing is later
+    # disabled, auto-memory (-workspace/memory/) into the root-owned dirs.
+    mkdir -p "$PROJECT_SLOT_DIR/.claude/projects/-workspace/memory"
 
     # Share auto-memory across all slots of this project so skills, user
     # profile, feedback, and decisions carry over between slots. Bind-mount
