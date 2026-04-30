@@ -256,7 +256,15 @@ if [ -d "/tmp/host-claude-home" ]; then
     # edits are picked up live without re-syncing. Marker keeps the append
     # idempotent across relaunches; if the seed gets re-synced (newer mtime)
     # the marker disappears and we re-append on the next start.
-    if [ -f "/tmp/host-claude-home/CLAUDE.md" ]; then
+    if [ -L "/tmp/host-claude-home/CLAUDE.md" ] && [ ! -e "/tmp/host-claude-home/CLAUDE.md" ]; then
+        # Dangling symlink: host ~/.claude/CLAUDE.md points outside ~/.claude,
+        # so the target isn't visible from inside the container. The [ -f ]
+        # test below would silently skip, and an @import directive pointing
+        # at the broken link wouldn't load either — warn explicitly so the
+        # user can fix it on the host.
+        host_claude_md_target=$(readlink "/tmp/host-claude-home/CLAUDE.md" 2>/dev/null || true)
+        printf 'claudebox: warning: host ~/.claude/CLAUDE.md is a symlink to %s, which is not mounted in the container. Host CLAUDE.md will not be merged into the slot. Fix by replacing the symlink with a regular file, or by moving the target under ~/.claude/.\n' "$host_claude_md_target" >&2
+    elif [ -f "/tmp/host-claude-home/CLAUDE.md" ]; then
         if [ -f "/home/DOCKERUSER/.claude/CLAUDE.md" ]; then
             if ! grep -qF 'claudebox:host-claude-md-import' "/home/DOCKERUSER/.claude/CLAUDE.md"; then
                 runuser -u DOCKERUSER -- bash -c 'printf "\n\n<!-- claudebox:host-claude-md-import -->\n@/tmp/host-claude-home/CLAUDE.md\n" >> "/home/DOCKERUSER/.claude/CLAUDE.md"'
