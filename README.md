@@ -123,7 +123,7 @@ Restart the container after creating or modifying the env file.
 Use the toggle script to quickly switch between the default Anthropic API and your custom provider:
 
 ```bash
-# Toggle provider (renames env <-> env.bak)
+# Toggle provider (comments/uncomments the provider section in-place)
 ~/.claudebox/source/examples/toggle-provider.sh
 
 # Or copy it somewhere convenient
@@ -131,7 +131,7 @@ cp ~/.claudebox/source/examples/toggle-provider.sh ~/.local/bin/claudebox-provid
 claudebox-provider
 ```
 
-When the env file is present, claudebox uses your custom provider. When removed (backed up to `env.bak`), it falls back to the default Anthropic API with your `ANTHROPIC_API_KEY`. Restart the container after toggling.
+The script only touches lines between `# === PROVIDER START ===` and `# === PROVIDER END ===` markers in `~/.claudebox/env`. Persistent settings outside those markers (e.g. `GIT_AUTHOR_*`, `EMAIL`) stay loaded regardless of toggle state. When the provider section is disabled, claudebox falls back to the default Anthropic API with your `ANTHROPIC_API_KEY`. Restart any running slot after toggling.
 
 ## ✨ Features
 

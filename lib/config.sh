@@ -10,6 +10,42 @@ _read_ini() {               # $1=file $2=section $3=key
   ' "$1" 2>/dev/null
 }
 
+# -------- First-run bootstrap of ~/.claudebox/env -----------------------------
+# Creates the env file from examples/env.example if absent. Best-effort fills
+# in git identity (GIT_AUTHOR_*, GIT_COMMITTER_*, EMAIL) from the host's
+# `git config --global` so containers can commit as you out of the box.
+# Idempotent: never touches an existing env file.
+bootstrap_env_file() {
+    local env_file="${CLAUDEBOX_HOME}/env"
+    local example_file="${CLAUDEBOX_SCRIPT_DIR}/examples/env.example"
+
+    [[ -f "$env_file" ]] && return 0
+    [[ -f "$example_file" ]] || return 0
+
+    mkdir -p "${CLAUDEBOX_HOME}"
+    cp "$example_file" "$env_file"
+
+    local host_name host_email
+    host_name="$(git config --global --get user.name 2>/dev/null || true)"
+    host_email="$(git config --global --get user.email 2>/dev/null || true)"
+
+    if [[ -n "$host_name" ]] && [[ -n "$host_email" ]]; then
+        local tmp
+        tmp="$(mktemp "${env_file}.XXXXXX")"
+        awk -v name="$host_name" -v email="$host_email" '
+            /^# GIT_AUTHOR_NAME=/     { print "GIT_AUTHOR_NAME=" name; next }
+            /^# GIT_AUTHOR_EMAIL=/    { print "GIT_AUTHOR_EMAIL=" email; next }
+            /^# GIT_COMMITTER_NAME=/  { print "GIT_COMMITTER_NAME=" name; next }
+            /^# GIT_COMMITTER_EMAIL=/ { print "GIT_COMMITTER_EMAIL=" email; next }
+            /^# EMAIL=/               { print "EMAIL=" email; next }
+            { print }
+        ' "$env_file" > "$tmp" && mv "$tmp" "$env_file"
+        printf 'Created %s with git identity from host gitconfig.\n' "$env_file" >&2
+    else
+        printf 'Created %s from env.example. Edit to add git identity.\n' "$env_file" >&2
+    fi
+}
+
 
 # -------- Profile functions (Bash 3.2 compatible) -----------------------------
 get_profile_packages() {

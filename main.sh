@@ -142,7 +142,10 @@ main() {
         dispatch_command "${CLI_SCRIPT_COMMAND}" "${CLI_PASS_THROUGH[@]}" "${CLI_CONTROL_FLAGS[@]}"
         exit $?
     fi
-    
+
+    # Step 4b: Bootstrap ~/.claudebox/env on first run (idempotent)
+    bootstrap_env_file
+
     # Step 5: Docker checks
     local docker_status
     docker_status=$(check_docker; echo $?)
