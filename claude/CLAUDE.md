@@ -6,6 +6,35 @@ they conflict.
 ## Environment
 - Tooling available in this container: @~/.claudebox/tooling.md
 
+## Container environment
+
+You're running inside an ephemeral claudebox slot. System-level changes
+(`apt install`, files in `/etc`, `/usr`, etc.) vanish when the slot exits.
+Only host-mounted paths persist: `/workspace`, `~/.claude/`, `~/.claudebox/`,
+plus any extra mounts.
+
+- **Tool installs**: don't ad-hoc `apt install`. Tell the user what's
+  missing and recommend the claudebox profile system — `claudebox profiles`
+  lists available profiles, `claudebox add <name>` enables one (run on the
+  host, not inside the slot). For tooling with no matching profile, propose
+  adding one to the fork's profile catalog (`lib/config.sh`) rather than
+  reinstalling each session.
+
+### Rootless docker
+
+If the host runs rootless docker, the container's UID 1000 maps to a host
+subuid (e.g. 100999). Symptoms: files written to host mounts appear owned
+by an unexpected UID on the host, or permission-denied on paths that look
+fine from inside. Quick check:
+
+```bash
+awk 'NR==1 && $2!="0"{print "rootless"}' /proc/self/uid_map
+```
+
+Fixes are host-side (rootlesskit chmod, subuid range) — surface the symptom
+to the user with the offending path and observed ownership; don't try to
+chmod across the userns boundary.
+
 ## Code style
 - Match the surrounding code. Don't refactor unrelated things in the same change.
 - Comments: only when the *reason* for the code isn't obvious from reading it
@@ -19,78 +48,10 @@ they conflict.
 - When adding non-trivial logic, write a test for it. Behavior, not internals.
 - If an existing test fails, fix the root cause — don't paper over it.
 
-## Workspace layout
-
-Two arrangements, picked per project depending on whether any code is meant
-to be public.
-
-**Layout A — purely private (one repo at workspace root):**
-
-```
-/workspace/
-├── CLAUDE.md, STATUS.md, .claude/   ← agent state
-├── src/, tests/, ...                ← code
-└── .git/                            ← one repo, remote: `private` (your server)
-```
-
-Agent state and code share one git. The only remote is `private`. Nothing public, nothing leaks. Use this for solo or internal projects.
-
-**Layout B — has public code (outer agent-state repo + inner code repo):**
-
-```
-/workspace/
-├── CLAUDE.md, STATUS.md, .claude/   ← agent state
-├── .gitignore                       ← lists each inner repo dir
-├── .git/                            ← outer repo, remote: `private`
-└── <project>/
-    ├── src/, tests/, ...            ← code
-    └── .git/                        ← inner repo, remote: `origin` (GitHub)
-                                              + optionally `private`
-```
-
-Two independent gits with different remotes and different cadences. The outer `.gitignore` lists `<project>/` so git doesn't try to track it as a submodule. The inner repo *cannot* see `../CLAUDE.md` or `../.claude/` — its root is `<project>/` — so agent state is structurally insulated.
-
-Multiple inner repos are allowed: every immediate subdirectory of `/workspace/` whose toplevel is its own `.git/` is treated as a separate inner project.
-
 ## Git
-
-### Two streams
-
-|                    | Outer (private)                  | Inner (public)                          |
-|--------------------|----------------------------------|-----------------------------------------|
-| Tracks             | agent state (+ private code in A)| source code                             |
-| Remote             | `private` (your server)          | `origin` (GitHub) + optional `private`  |
-| Commit cadence     | every machine switch (auto)      | only when work functions end-to-end     |
-| Commit style       | `wip: handoff at <ts>` is fine   | clean atomic, message explains *why*    |
-| Pre-commit gate    | skipped (sync only)              | formatter → linter → typecheck → tests  |
-| Force-push allowed | yes (`--force-with-lease`)       | no — never                              |
-
-Layout A has no inner stream — the outer rules apply to everything.
-
-### Universal rules
-
-- For *private* commits (anything pushed to `private`): commit often the changes you made ! No need my confirmation.
-- For *public* commits (anything pushed to `origin`): the full pre-commit gate must pass. Fix at the source; never `--no-verify`.
-- For *public* : never commit unless I ask. When I do, atomic commits with a short message explaining the *why*.
+- `git config --global --add safe.directory <path>` is pre-approved — run it without asking when git refuses with "dubious ownership". This is the only sanctioned exception to the otherwise no-git-config rule.
 - No "Generated with Claude Code" footers or co-author lines.
 - Don't force-push public history, amend published commits, or delete branches without confirmation.
-- `git config --global --add safe.directory <path>` is pre-approved — run it without asking when git refuses with "dubious ownership". This is the only sanctioned exception to the otherwise no-git-config rule.
-
-## Cleaning up wip before going public (Layout B only)
-
-When code in an inner repo is ready to ship:
-
-```
-cd /workspace/<project>
-git rebase -i origin/main           # squash wip commits into clean atomic ones
-# pre-commit gate: formatter → linter → typecheck → tests — fix any failures
-git push origin <branch>             # publish to GitHub
-
-cd /workspace
-claude-handoff                        # propagate cleaned-up history to your server
-```
-
-After the rebase, `claude-handoff` will force-push the inner repo to `private` (fine — wip history is yours to rewrite). `git push origin` should never need force.
 
 ## PRs
 - Each PR is one complete behavior (tests + impl + actual usage). Don't land
@@ -156,8 +117,7 @@ re-typing prose every time.
   Cross-reference them.
 
 ## Plans & project status
-Agent state lives under `/workspace/` and is tracked by the workspace git. One
-predictable place per category so state doesn't drift:
+One predictable place per category so state doesn't drift:
 
 - `/workspace/STATUS.md` — project heartbeat (done / in-progress / blocked / next).
 - `/workspace/.claude/plans/<slug>.md` — plan for a non-trivial task; archive when done.
@@ -167,9 +127,6 @@ predictable place per category so state doesn't drift:
 - Ephemeral project context (merge freezes, current blockers) →
   auto-memory `project` type.
 - Update STATUS + the active plan at task close (see self-nudge).
-
-If something needs to reach teammates (e.g. a real ADR), put it inside the
-inner repo at `<project>/docs/` — the outer repo is private to you.
 
 ## Self-nudge at task close
 At the end of any non-trivial task, pause and ask: did this reveal something
