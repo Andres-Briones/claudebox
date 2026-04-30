@@ -249,10 +249,24 @@ if [ -d "/tmp/host-claude-home" ]; then
         fi
     done
 
-    # Also symlink CLAUDE.md from host if not already present
-    # This provides user-level instructions across all containers
-    if [ -f "/tmp/host-claude-home/CLAUDE.md" ] && [ ! -e "/home/DOCKERUSER/.claude/CLAUDE.md" ]; then
-        runuser -u DOCKERUSER -- ln -s "/tmp/host-claude-home/CLAUDE.md" "/home/DOCKERUSER/.claude/CLAUDE.md"
+    # Merge host CLAUDE.md into slot CLAUDE.md so the container sees both
+    # claudebox-sourced (seed) and host-sourced (user) instructions. The seed
+    # is already in the slot at this point (sync_claude_seed_files ran on the
+    # host pre-launch); we append a Claude Code @import directive so host
+    # edits are picked up live without re-syncing. Marker keeps the append
+    # idempotent across relaunches; if the seed gets re-synced (newer mtime)
+    # the marker disappears and we re-append on the next start.
+    if [ -f "/tmp/host-claude-home/CLAUDE.md" ]; then
+        if [ -f "/home/DOCKERUSER/.claude/CLAUDE.md" ]; then
+            if ! grep -qF 'claudebox:host-claude-md-import' "/home/DOCKERUSER/.claude/CLAUDE.md"; then
+                runuser -u DOCKERUSER -- bash -c 'printf "\n\n<!-- claudebox:host-claude-md-import -->\n@/tmp/host-claude-home/CLAUDE.md\n" >> "/home/DOCKERUSER/.claude/CLAUDE.md"'
+                if [ "${VERBOSE:-false}" = "true" ]; then
+                    printf 'Appended host CLAUDE.md @import to slot CLAUDE.md\n' >&2
+                fi
+            fi
+        else
+            runuser -u DOCKERUSER -- ln -s "/tmp/host-claude-home/CLAUDE.md" "/home/DOCKERUSER/.claude/CLAUDE.md"
+        fi
     fi
 fi
 
