@@ -446,6 +446,19 @@ run_claudebox_container() {
     # Mount SSH directory
     docker_args+=(-v "$HOME/.ssh":"/home/$DOCKER_USER/.ssh:ro")
 
+    # Mount host gitconfig read-only so commits inside the container use
+    # your host git identity (and aliases / signing config / etc.). Covers
+    # both ~/.gitconfig and the XDG-style ~/.config/git/. Disable with
+    # CLAUDEBOX_NO_GITCONFIG=true in ~/.claudebox/env.
+    if [[ "${CLAUDEBOX_NO_GITCONFIG:-false}" != "true" ]]; then
+        if [[ -f "$HOME/.gitconfig" ]]; then
+            docker_args+=(-v "$HOME/.gitconfig":"/home/$DOCKER_USER/.gitconfig:ro")
+        fi
+        if [[ -d "$HOME/.config/git" ]]; then
+            docker_args+=(-v "$HOME/.config/git":"/home/$DOCKER_USER/.config/git:ro")
+        fi
+    fi
+
     # Mount host ~/.claude directory read-only for global skill access
     # Skills installed in the host's ~/.claude/ (e.g., get-shit-done) will be
     # symlinked into the container's ~/.claude/ by the entrypoint script.
