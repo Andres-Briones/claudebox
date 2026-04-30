@@ -283,8 +283,14 @@ main() {
        && [[ "$cmd_requirements" == "docker" ]] \
        && [[ -z "${CLI_SCRIPT_COMMAND}" ]]; then
         local reply="y"
+        local prompt
+        if project_has_slots "$PROJECT_DIR"; then
+            prompt='No free slot available. Create one and launch? [Y/n] '
+        else
+            prompt='This folder is not a ClaudeBox project yet. Create the first slot and launch? [Y/n] '
+        fi
         if [[ -t 0 ]]; then
-            printf 'No free slot available. Create one and launch? [Y/n] ' >&2
+            printf '%s' "$prompt" >&2
             IFS= read -r reply || reply="y"
             reply="${reply:-y}"
         fi

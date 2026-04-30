@@ -217,6 +217,24 @@ determine_next_start_container() {
     return 1
 }
 
+# True (0) when at least one slot directory has already been provisioned
+# for this project. Lets callers distinguish "all slots busy" from "this
+# folder isn't a ClaudeBox project yet" — both surface as a "NONE" result
+# from get_project_folder_name.
+project_has_slots() {
+    local path="$1" parent max idx name dir
+    parent=$(get_parent_dir "$path")
+    max=$(read_counter "$parent")
+    for ((idx=1; idx<=max; idx++)); do
+        name=$(generate_container_name "$path" "$idx")
+        dir="$parent/$name"
+        if [[ -d "$dir" ]]; then
+            return 0
+        fi
+    done
+    return 1
+}
+
 # Find the first authenticated and inactive slot
 find_ready_slot() {
     local path="$1" parent max idx name dir
@@ -634,7 +652,7 @@ export -f crc32_word crc32_string crc32_file
 export -f slugify_path generate_container_name generate_parent_folder_name get_parent_dir
 export -f init_project_dir init_slot_dir
 export -f read_counter write_counter
-export -f create_container determine_next_start_container find_ready_slot find_inactive_slot
+export -f create_container determine_next_start_container project_has_slots find_ready_slot find_inactive_slot
 export -f get_project_folder_name get_image_name _get_project_slug
 export -f get_project_by_path list_all_projects resolve_project_path
 export -f list_project_slots get_slot_dir get_slot_index prune_slot_counter
