@@ -135,10 +135,36 @@ sync_claude_seed_files() {
 
     mkdir -p "$slot_dir/.claude"
 
-    local src dest rel
+    local src dest rel check rest skip_override
     while IFS= read -r -d '' src; do
         rel="${src#$claude_source/}"
         dest="$slot_dir/.claude/$rel"
+
+        # Preserve user overrides. The container entrypoint may have replaced
+        # a seed-copied path with a symlink into /tmp/host-claude-home (the
+        # read-only host ~/.claude mount). Copying through such a symlink
+        # would either fail or, worse, write into the host mount. Skip when:
+        #   - dest itself is a symlink (file-level override), or
+        #   - any ancestor of dest under slot/.claude is a symlink
+        #     (dir-level override, e.g. skills/<name>/).
+        if [[ -L "$dest" ]]; then
+            continue
+        fi
+        skip_override=""
+        check="$slot_dir/.claude"
+        rest="$rel"
+        while [[ "$rest" == */* ]]; do
+            check="$check/${rest%%/*}"
+            rest="${rest#*/}"
+            if [[ -L "$check" ]]; then
+                skip_override=1
+                break
+            fi
+        done
+        if [[ -n "$skip_override" ]]; then
+            continue
+        fi
+
         if [[ ! -e "$dest" ]] || [[ "$src" -nt "$dest" ]]; then
             mkdir -p "$(dirname "$dest")"
             cp "$src" "$dest"
