@@ -213,10 +213,19 @@ fi
 
 cd /home/DOCKERUSER
 
-# Symlink global skills from host ~/.claude directory (runs in both shell and claude modes)
-# The host ~/.claude is mounted read-only at /tmp/host-claude-home by docker.sh
-# We symlink skill directories (e.g., get-shit-done) into ~/.claude/
-# while skipping known system directories and files
+# Merge host ~/.claude into the slot's ~/.claude (runs in both shell and
+# claude modes). Host ~/.claude is mounted read-only at /tmp/host-claude-home
+# by docker.sh.
+#
+# Two cases per top-level dir (e.g. skills/, agents/):
+#   - slot doesn't have the dir → symlink the whole host dir into the slot.
+#   - slot already has it (seed-populated by sync_claude_seed_files) → merge
+#     per-child. User wins on name collisions: replace the slot's seed copy
+#     with a symlink to the host child. This lets fork-shipped defaults
+#     coexist with user customs, with the user able to override defaults by
+#     using the same name.
+# Stale host-symlinks (host source removed) are cleaned so the next seed
+# sync can re-populate the seed default.
 if [ -d "/tmp/host-claude-home" ]; then
     for item in /tmp/host-claude-home/*/; do
         # Skip if glob didn't match anything
@@ -240,13 +249,65 @@ if [ -d "/tmp/host-claude-home" ]; then
                 ;;
         esac
 
-        # Only create symlink if target doesn't already exist
-        if [ ! -e "/home/DOCKERUSER/.claude/$dir_name" ]; then
-            runuser -u DOCKERUSER -- ln -s "/tmp/host-claude-home/$dir_name" "/home/DOCKERUSER/.claude/$dir_name"
+        host_src="/tmp/host-claude-home/$dir_name"
+        target="/home/DOCKERUSER/.claude/$dir_name"
+
+        if [ ! -e "$target" ]; then
+            # Slot has nothing here — link the whole host dir.
+            runuser -u DOCKERUSER -- ln -s "$host_src" "$target"
             if [ "${VERBOSE:-false}" = "true" ]; then
-                printf 'Linked host skill: %s\n' "$dir_name" >&2
+                printf 'Linked host dir: %s\n' "$dir_name" >&2
             fi
+            continue
         fi
+
+        # Slot already has this dir (from seed). Merge per-child.
+        for child in "$host_src"/* "$host_src"/.*; do
+            if [ ! -e "$child" ]; then
+                continue
+            fi
+            child_name=$(basename "$child")
+            case "$child_name" in
+                .|..) continue ;;
+            esac
+            target_child="$target/$child_name"
+            if [ -L "$target_child" ]; then
+                # Already a host-symlink (idempotent across relaunches).
+                continue
+            fi
+            if [ -e "$target_child" ]; then
+                # Slot has a seed copy — user wins, replace with host symlink.
+                runuser -u DOCKERUSER -- rm -rf "$target_child"
+            fi
+            runuser -u DOCKERUSER -- ln -s "$host_src/$child_name" "$target_child"
+            if [ "${VERBOSE:-false}" = "true" ]; then
+                printf 'Override host: %s/%s\n' "$dir_name" "$child_name" >&2
+            fi
+        done
+
+        # Clean dangling host-symlinks in the slot dir (host child was
+        # removed). Without cleanup the broken symlink would shadow the seed
+        # default forever; removing it lets the next seed sync re-populate.
+        for slot_child in "$target"/* "$target"/.*; do
+            if [ ! -L "$slot_child" ]; then
+                continue
+            fi
+            slot_child_name=$(basename "$slot_child")
+            case "$slot_child_name" in
+                .|..) continue ;;
+            esac
+            link_target=$(readlink "$slot_child" 2>/dev/null || true)
+            case "$link_target" in
+                /tmp/host-claude-home/*)
+                    if [ ! -e "$slot_child" ]; then
+                        runuser -u DOCKERUSER -- rm -f "$slot_child"
+                        if [ "${VERBOSE:-false}" = "true" ]; then
+                            printf 'Cleaned dangling host-symlink: %s/%s\n' "$dir_name" "$slot_child_name" >&2
+                        fi
+                    fi
+                    ;;
+            esac
+        done
     done
 
     # Merge host CLAUDE.md into slot CLAUDE.md so the container sees both
