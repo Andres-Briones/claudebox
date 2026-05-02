@@ -136,23 +136,35 @@ The script only touches lines between `# === PROVIDER START ===` and `# === PROV
 ### Optional: GSD (Get Shit Done) workflow
 
 ClaudeBox can host the [GSD](https://github.com/gsd-build/get-shit-done)
-skills/agents/commands workflow as an opt-in add-on. Two parts:
+workflow toolkit (slash commands, hook scripts, workflow content) as a
+per-project opt-in via the `gsd` profile.
+
+**One-time host setup:**
 
 ```bash
-# 1. Install the @gsd-build/sdk CLI into the slot image (per project)
-claudebox add gsd
-
-# 2. Install the GSD markdown payload into ~/.claude/ (once, host-side)
-~/.claudebox/source/scripts/gsd-install.sh           # minimal: 6 core skills
-~/.claudebox/source/scripts/gsd-install.sh --full    # full: all skills + agents
+# Install the GSD payload into ~/.claude/gsd/ — a staging dir that's
+# inert until a project opts in via the gsd profile.
+~/.claudebox/source/scripts/gsd-install.sh           # minimal: 5 core commands
+~/.claudebox/source/scripts/gsd-install.sh --full    # full: all commands + agents
 ```
 
-The installer drops files under `~/.claude/{skills,agents,commands}/gsd/`
-on the host. ClaudeBox auto-mounts those into every slot, and a small
-exception in the entrypoint also routes the `commands/gsd/` subdir
-through (top-level `commands/` files remain isolated per-project as
-usual). Re-run `gsd-install.sh --update` to pull the latest GSD release.
-Run with `--uninstall` to remove the payload.
+**Per project:**
+
+```bash
+# Add the gsd profile: installs @gsd-build/sdk into the slot image, and
+# the entrypoint wires the staging payload into the slot's ~/.claude/
+# (per-file symlinks for commands/agents/hooks; merged settings.json).
+claudebox add gsd
+
+# Remove the gsd profile: next launch sweeps the activation symlinks
+# and restores settings.json to a clean baseline.
+claudebox remove gsd
+```
+
+Slots without the `gsd` profile see no `/gsd:*` commands and no `gsd-*`
+hooks firing — clean baseline. Re-run `gsd-install.sh --update` to pull
+the latest GSD release; `--uninstall` removes the staging dir and
+sweeps any leftover legacy paths.
 
 ## ✨ Features
 
