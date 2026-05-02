@@ -459,6 +459,20 @@ else
                 fi
             fi
 
+            # GSD opt-in: merge host ~/.claude/commands/gsd/ into the slot
+            # commands dir as one namespaced subdir. Narrow exception to the
+            # commands skip-list at the top of this script: top-level command
+            # files stay isolated, but a clearly-namespaced subdir is safe
+            # and lets `claudebox add gsd` ship slash commands too.
+            if [ -d "/tmp/host-claude-home/commands/gsd" ]; then
+                if [ ! -e "$HOME/.claude/commands" ]; then
+                    mkdir -p "$HOME/.claude/commands"
+                fi
+                if [ ! -e "$HOME/.claude/commands/gsd" ]; then
+                    ln -s /tmp/host-claude-home/commands/gsd "$HOME/.claude/commands/gsd"
+                fi
+            fi
+
             cd /workspace
             
             # Prepare MCP configuration arguments for native --mcp-config support

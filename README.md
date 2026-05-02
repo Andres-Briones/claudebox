@@ -133,6 +133,27 @@ claudebox-provider
 
 The script only touches lines between `# === PROVIDER START ===` and `# === PROVIDER END ===` markers in `~/.claudebox/env`. Persistent settings outside those markers (e.g. `GIT_AUTHOR_*`, `EMAIL`) stay loaded regardless of toggle state. When the provider section is disabled, claudebox falls back to the default Anthropic API with your `ANTHROPIC_API_KEY`. Restart any running slot after toggling.
 
+### Optional: GSD (Get Shit Done) workflow
+
+ClaudeBox can host the [GSD](https://github.com/gsd-build/get-shit-done)
+skills/agents/commands workflow as an opt-in add-on. Two parts:
+
+```bash
+# 1. Install the @gsd-build/sdk CLI into the slot image (per project)
+claudebox add gsd
+
+# 2. Install the GSD markdown payload into ~/.claude/ (once, host-side)
+~/.claudebox/source/scripts/gsd-install.sh           # minimal: 6 core skills
+~/.claudebox/source/scripts/gsd-install.sh --full    # full: all skills + agents
+```
+
+The installer drops files under `~/.claude/{skills,agents,commands}/gsd/`
+on the host. ClaudeBox auto-mounts those into every slot, and a small
+exception in the entrypoint also routes the `commands/gsd/` subdir
+through (top-level `commands/` files remain isolated per-project as
+usual). Re-run `gsd-install.sh --update` to pull the latest GSD release.
+Run with `--uninstall` to remove the payload.
+
 ## ✨ Features
 
 - **Containerized Environment**: Run Claude Code in an isolated Docker container

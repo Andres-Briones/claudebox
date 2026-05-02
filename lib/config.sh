@@ -74,6 +74,7 @@ get_profile_packages() {
         latex) echo "" ;;  # Custom install via heredoc
         wolfram) echo "" ;;  # Custom install via heredoc
         wolfram-cloud) echo "" ;;  # Standalone wolframscript
+        gsd) echo "" ;;  # @gsd-build/sdk installed via npm in get_profile_gsd
         *) echo "" ;;
     esac
 }
@@ -104,12 +105,13 @@ get_profile_description() {
         latex)   echo "LaTeX + Emacs (TeX Live full, Emacs, feynmp-auto for Feynman diagrams)" ;;
         wolfram) echo "Wolfram Engine 14 (Mathematica kernel, wolframscript)" ;;
         wolfram-cloud) echo "Wolfram Cloud (Python wolframclient, cloud computation, no local engine)" ;;
+        gsd) echo "GSD (Get Shit Done) workflow CLI - @gsd-build/sdk; markdown payload installed separately via scripts/gsd-install.sh" ;;
         *) echo "" ;;
     esac
 }
 
 get_all_profile_names() {
-    echo "core build-tools shell networking c openwrt rust python go flutter javascript java ruby php database devops web embedded datascience security ml latex wolfram wolfram-cloud"
+    echo "core build-tools shell networking c openwrt rust python go flutter javascript java ruby php database devops web embedded datascience security ml latex wolfram wolfram-cloud gsd"
 }
 
 profile_exists() {
@@ -132,6 +134,7 @@ expand_profile() {
             echo "$1"
             ;;
         latex|wolfram|wolfram-cloud) echo "$1" ;;
+        gsd) echo "core javascript gsd" ;;
         *)
             echo "$1"
             ;;
@@ -326,6 +329,14 @@ ENV NVM_DIR="/home/claude/.nvm"
 RUN . $NVM_DIR/nvm.sh && nvm install --lts
 USER claude
 RUN bash -c "source $NVM_DIR/nvm.sh && npm install -g typescript eslint prettier yarn pnpm"
+USER root
+EOF
+}
+
+get_profile_gsd() {
+    cat << 'EOF'
+USER claude
+RUN bash -c "source $NVM_DIR/nvm.sh && npm install -g @gsd-build/sdk"
 USER root
 EOF
 }
