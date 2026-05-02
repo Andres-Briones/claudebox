@@ -261,7 +261,18 @@ if [ -d "/tmp/host-claude-home" ]; then
             continue
         fi
 
-        # Slot already has this dir (from seed). Merge per-child.
+        # If $target is already a top-level symlink to $host_src, a prior
+        # launch already linked the whole dir — idempotent, skip the merge.
+        # Without this guard, the per-child loop below would resolve through
+        # the symlink and try to rm files on the host's read-only bind mount.
+        if [ -L "$target" ]; then
+            link_target=$(readlink "$target" 2>/dev/null || true)
+            if [ "$link_target" = "$host_src" ]; then
+                continue
+            fi
+        fi
+
+        # Slot already has this dir as a real dir (from seed). Merge per-child.
         for child in "$host_src"/* "$host_src"/.*; do
             if [ ! -e "$child" ]; then
                 continue
@@ -335,6 +346,222 @@ if [ -d "/tmp/host-claude-home" ]; then
             fi
         else
             runuser -u DOCKERUSER -- ln -s "/tmp/host-claude-home/CLAUDE.md" "/home/DOCKERUSER/.claude/CLAUDE.md"
+        fi
+    fi
+fi
+
+# GSD profile activation/deactivation. The staging dir at host ~/.claude/gsd/
+# (mounted read-only at /tmp/host-claude-home/gsd/) is inert until the slot's
+# profiles.ini lists `gsd` — at that point per-file symlinks wire its
+# commands/agents/hooks into the slot's live dirs and settings.gsd.json is
+# jq-merged into the slot's settings.json.
+#
+# Deactivation is symmetric: when `gsd` leaves the profile chain, sweep the
+# symlinks and restore settings.json from the pre-merge backup written on
+# first activation. Without this sweep, prior activation state (per-file
+# symlinks) persists in the slot's ~/.claude/ across rebuilds, so /gsd:*
+# commands keep working even after `claudebox remove gsd`.
+SLOT_HOME="/home/DOCKERUSER/.claude"
+GSD_STAGING="/tmp/host-claude-home/gsd"
+GSD_PROFILES_INI="/home/DOCKERUSER/.claudebox/profiles.ini"
+GSD_BACKUP="$SLOT_HOME/.gsd-settings-backup.json"
+GSD_MARKER='"_gsd_managed":true'
+GSD_ACTIVE=false
+if [ -f "$GSD_PROFILES_INI" ]; then
+    # Extract names from the [profiles] section (one per line, no [).
+    if awk '
+        /^\[profiles\]$/ { in_section=1; next }
+        /^\[/             { in_section=0 }
+        in_section && /^gsd$/ { print; exit }
+    ' "$GSD_PROFILES_INI" | grep -q '^gsd$'; then
+        if [ -d "$GSD_STAGING" ]; then
+            GSD_ACTIVE=true
+        fi
+    fi
+fi
+
+if [ "$GSD_ACTIVE" = "true" ]; then
+    if [ "${VERBOSE:-false}" = "true" ]; then
+        printf 'GSD profile active — activating staging payload\n' >&2
+    fi
+
+    # Per-file symlinks for commands/gsd, agents, hooks. Symlink targets
+    # point at the read-only host bind mount, so the slot sees live host
+    # content without needing to copy.
+    for sub in commands/gsd agents hooks; do
+        gsd_src_dir="$GSD_STAGING/$sub"
+        gsd_dst_dir="$SLOT_HOME/$sub"
+        if [ ! -d "$gsd_src_dir" ]; then
+            continue
+        fi
+        # If $gsd_dst_dir exists but isn't a real directory (dangling
+        # symlink from the legacy GSD opt-in code, regular file, etc.),
+        # remove it so mkdir -p succeeds. Without this, mkdir -p fails
+        # with "File exists" on the stale state.
+        gsd_need_clean=false
+        if [ -L "$gsd_dst_dir" ]; then
+            gsd_need_clean=true
+        elif [ -e "$gsd_dst_dir" ]; then
+            if [ ! -d "$gsd_dst_dir" ]; then
+                gsd_need_clean=true
+            fi
+        fi
+        if [ "$gsd_need_clean" = "true" ]; then
+            runuser -u DOCKERUSER -- rm -rf "$gsd_dst_dir"
+        fi
+        runuser -u DOCKERUSER -- mkdir -p "$gsd_dst_dir"
+        for gsd_f in "$gsd_src_dir"/*; do
+            if [ ! -e "$gsd_f" ]; then
+                continue
+            fi
+            gsd_target="$gsd_dst_dir/$(basename "$gsd_f")"
+            if [ -L "$gsd_target" ]; then
+                continue
+            fi
+            if [ -e "$gsd_target" ]; then
+                runuser -u DOCKERUSER -- rm -rf "$gsd_target"
+            fi
+            runuser -u DOCKERUSER -- ln -s "$gsd_f" "$gsd_target"
+        done
+    done
+
+    # Workflows: command stubs @-reference ~/.claude/get-shit-done/workflows/.
+    # Create the get-shit-done dir as a real dir in the slot, then symlink
+    # workflows under it (avoids exposing host bin/lib if upstream ships them).
+    if [ -d "$GSD_STAGING/workflows" ]; then
+        # The slot may have a stale ~/.claude/get-shit-done symlink from the
+        # pre-staging install (host-merge loop auto-linked the whole host
+        # dir; new install doesn't ship that path). Same cleanup as above.
+        gsd_gsd_dir="$SLOT_HOME/get-shit-done"
+        gsd_need_clean=false
+        if [ -L "$gsd_gsd_dir" ]; then
+            gsd_need_clean=true
+        elif [ -e "$gsd_gsd_dir" ]; then
+            if [ ! -d "$gsd_gsd_dir" ]; then
+                gsd_need_clean=true
+            fi
+        fi
+        if [ "$gsd_need_clean" = "true" ]; then
+            runuser -u DOCKERUSER -- rm -rf "$gsd_gsd_dir"
+        fi
+        runuser -u DOCKERUSER -- mkdir -p "$gsd_gsd_dir"
+        gsd_wf_target="$gsd_gsd_dir/workflows"
+        if [ ! -L "$gsd_wf_target" ]; then
+            if [ -e "$gsd_wf_target" ]; then
+                runuser -u DOCKERUSER -- rm -rf "$gsd_wf_target"
+            fi
+            runuser -u DOCKERUSER -- ln -s "$GSD_STAGING/workflows" "$gsd_wf_target"
+        fi
+    fi
+
+    # jq-merge the settings fragment into the slot's settings.json. Backup
+    # the pre-merge state once (when the marker isn't present yet) so
+    # deactivation can restore. Add a marker so we can detect already-merged
+    # state across re-runs and skip re-backing-up.
+    if [ -f "$GSD_STAGING/settings.gsd.json" ] && command -v jq >/dev/null 2>&1; then
+        if [ ! -f "$SLOT_HOME/settings.json" ]; then
+            runuser -u DOCKERUSER -- bash -c 'echo "{}" > "$HOME/.claude/settings.json"'
+        fi
+        # Marker check via jq, not grep — jq pretty-prints with a space after
+        # the colon (`"_gsd_managed": true`), so a literal grep for the
+        # no-space form misses every time and we'd re-backup the merged
+        # state on every relaunch (corrupting the backup).
+        gsd_marker_present=false
+        if [ "$(jq -r '._gsd_managed // false' "$SLOT_HOME/settings.json" 2>/dev/null)" = "true" ]; then
+            gsd_marker_present=true
+        fi
+        if [ "$gsd_marker_present" = "false" ]; then
+            runuser -u DOCKERUSER -- cp "$SLOT_HOME/settings.json" "$GSD_BACKUP"
+        fi
+        runuser -u DOCKERUSER -- bash -c '
+            set -e
+            settings="$HOME/.claude/settings.json"
+            fragment="/tmp/host-claude-home/gsd/settings.gsd.json"
+            tmp=$(mktemp)
+            jq -s ".[0] * .[1] * {\"_gsd_managed\": true}" "$settings" "$fragment" > "$tmp"
+            mv "$tmp" "$settings"
+        '
+    fi
+else
+    # Deactivation: sweep slot symlinks pointing into the GSD staging dir
+    # and restore settings.json from the pre-merge backup if one exists.
+    # Runs whenever `gsd` is not in the profile chain — covers both fresh
+    # never-activated slots (no-op) and slots that had GSD removed.
+    if [ "${VERBOSE:-false}" = "true" ]; then
+        printf 'GSD profile inactive — sweeping prior activation state\n' >&2
+    fi
+    for sub in commands/gsd agents hooks; do
+        gsd_sweep_dir="$SLOT_HOME/$sub"
+        if [ ! -d "$gsd_sweep_dir" ]; then
+            continue
+        fi
+        for gsd_f in "$gsd_sweep_dir"/*; do
+            if [ ! -L "$gsd_f" ]; then
+                continue
+            fi
+            gsd_link_target=$(readlink "$gsd_f" 2>/dev/null || true)
+            case "$gsd_link_target" in
+                /tmp/host-claude-home/gsd/*)
+                    runuser -u DOCKERUSER -- rm -f "$gsd_f"
+                    ;;
+            esac
+        done
+        # Drop empty dirs we created on activation.
+        if [ -d "$gsd_sweep_dir" ] && [ -z "$(ls -A "$gsd_sweep_dir" 2>/dev/null)" ]; then
+            runuser -u DOCKERUSER -- rmdir "$gsd_sweep_dir" 2>/dev/null || true
+        fi
+    done
+
+    # Workflows symlink + parent dir.
+    gsd_sweep_wf="$SLOT_HOME/get-shit-done/workflows"
+    if [ -L "$gsd_sweep_wf" ]; then
+        gsd_link_target=$(readlink "$gsd_sweep_wf" 2>/dev/null || true)
+        case "$gsd_link_target" in
+            /tmp/host-claude-home/gsd/*)
+                runuser -u DOCKERUSER -- rm -f "$gsd_sweep_wf"
+                ;;
+        esac
+    fi
+    if [ -d "$SLOT_HOME/get-shit-done" ] && [ -z "$(ls -A "$SLOT_HOME/get-shit-done" 2>/dev/null)" ]; then
+        runuser -u DOCKERUSER -- rmdir "$SLOT_HOME/get-shit-done" 2>/dev/null || true
+    fi
+
+    # Restore settings.json:
+    #   1. If a pre-merge backup exists AND looks clean (no GSD fragment in
+    #      it), restore from it — preserves any user customizations made to
+    #      settings.json before activation. A backup that itself contains
+    #      the GSD fragment is corrupt (caused by the v1 marker-check bug
+    #      that re-backed-up the merged state); discard it.
+    #   2. Then unconditionally strip GSD-introduced keys as a safety net.
+    #      Safe because the seed baseline ships no statusLine/hooks; any of
+    #      those keys still present after step 1 came from the fragment.
+    if [ -f "$GSD_BACKUP" ] && command -v jq >/dev/null 2>&1; then
+        gsd_backup_clean=true
+        if [ "$(jq -r '._gsd_managed // false' "$GSD_BACKUP" 2>/dev/null)" = "true" ]; then
+            gsd_backup_clean=false
+        fi
+        if [ "$gsd_backup_clean" = "true" ]; then
+            runuser -u DOCKERUSER -- mv "$GSD_BACKUP" "$SLOT_HOME/settings.json"
+        else
+            runuser -u DOCKERUSER -- rm -f "$GSD_BACKUP"
+        fi
+    fi
+
+    if [ -f "$SLOT_HOME/settings.json" ] && command -v jq >/dev/null 2>&1; then
+        gsd_needs_strip=false
+        if grep -qF '/hooks/gsd-' "$SLOT_HOME/settings.json"; then
+            gsd_needs_strip=true
+        elif [ "$(jq -r '._gsd_managed // false' "$SLOT_HOME/settings.json" 2>/dev/null)" = "true" ]; then
+            gsd_needs_strip=true
+        fi
+        if [ "$gsd_needs_strip" = "true" ]; then
+            runuser -u DOCKERUSER -- bash -c '
+                set -e
+                s="$HOME/.claude/settings.json"
+                tmp=$(mktemp)
+                jq "del(._gsd_managed, .statusLine, .hooks)" "$s" > "$tmp"
+                mv "$tmp" "$s"
+            '
         fi
     fi
 fi
