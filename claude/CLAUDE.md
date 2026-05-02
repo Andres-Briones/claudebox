@@ -82,20 +82,20 @@ so writes via `.agent/...` skip the carve-out and run silently. Both paths
 refer to the same files; the harness still auto-discovers content under
 `.claude/`.
 
-**Convention used below:** when writing skills, scripts, plans, decisions,
-or agent definitions, use `.agent/...` paths. Direct `.claude/...` edits
-remain appropriate for content that *should* be gated (settings, hooks).
+**Convention used below:** when writing skills, scripts, or agent
+definitions, use `.agent/...` paths. Plans, decisions, and project state
+live at `.planning/` — outside `.claude/`, so no carve-out workaround is
+needed. Direct `.claude/...` edits remain appropriate for content that
+*should* be gated (settings, hooks).
 
 If the symlinks aren't set up in your workspace yet, run once at the
 workspace root:
 
 ```bash
-mkdir -p .claude/agents .claude/skills .claude/scripts .claude/plans .claude/decisions .agent
-ln -s ../.claude/agents    .agent/agents
-ln -s ../.claude/skills    .agent/skills
-ln -s ../.claude/scripts   .agent/scripts
-ln -s ../.claude/plans     .agent/plans
-ln -s ../.claude/decisions .agent/decisions
+mkdir -p .claude/agents .claude/skills .claude/scripts .agent .planning/plans .planning/decisions
+ln -s ../.claude/agents  .agent/agents
+ln -s ../.claude/skills  .agent/skills
+ln -s ../.claude/scripts .agent/scripts
 ```
 
 ## Skills (auto-improvement)
@@ -159,16 +159,25 @@ re-typing prose every time.
   Cross-reference them.
 
 ## Plans & project status
-One predictable place per category so state doesn't drift:
+All project state lives under `/workspace/.planning/`. The naming aligns
+with the [GSD (Get Shit Done)](https://github.com/gsd-build/get-shit-done)
+workflow toolkit, so opting into GSD on a project shares the directory
+cleanly (GSD writes its own files at `.planning/` root; our subdirs live
+alongside without collision).
 
-- `/workspace/STATUS.md` — project heartbeat (done / in-progress / blocked / next).
-- `/workspace/.agent/plans/<slug>.md` — plan for a non-trivial task; archive when done.
-- `/workspace/.agent/decisions/NNN-<slug>.md` — long-lived "why X over Y" records
+- `/workspace/.planning/STATE.md` — project heartbeat (done / in-progress / blocked / next).
+- `/workspace/.planning/plans/<slug>.md` — plan for a non-trivial task; archive when done.
+- `/workspace/.planning/decisions/NNN-<slug>.md` — long-lived "why X over Y" records
   (ADRs), numbered sequentially. Append-only; supersede via a new decision.
 - In-session todos → `TaskCreate` (ephemeral, don't persist to disk).
 - Ephemeral project context (merge freezes, current blockers) →
   auto-memory `project` type.
-- Update STATUS + the active plan at task close (see self-nudge).
+- Update STATE + the active plan at task close (see self-nudge).
+
+To migrate a workspace still using the older `STATUS.md` + `.agent/plans/`
++ `.agent/decisions/` layout, invoke the `migrate-to-planning` skill —
+it dispatches the `planning-migrator` subagent which scans, reports, and
+executes the moves with `git mv` to preserve history.
 
 ## Self-nudge at task close
 At the end of any non-trivial task, pause and ask: did this reveal something
