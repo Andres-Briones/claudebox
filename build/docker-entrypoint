@@ -362,7 +362,9 @@ fi
 # symlinks) persists in the slot's ~/.claude/ across rebuilds, so /gsd:*
 # commands keep working even after `claudebox remove gsd`.
 SLOT_HOME="/home/DOCKERUSER/.claude"
-GSD_STAGING="/tmp/host-claude-home/gsd"
+GSD_HOST_STAGING="/tmp/host-claude-home/gsd"
+GSD_LOCAL_STAGING="$SLOT_HOME/.gsd-staging"
+GSD_STAGING="$GSD_HOST_STAGING"
 GSD_PROFILES_INI="/home/DOCKERUSER/.claudebox/profiles.ini"
 GSD_BACKUP="$SLOT_HOME/.gsd-settings-backup.json"
 GSD_MARKER='"_gsd_managed":true'
@@ -374,7 +376,7 @@ if [ -f "$GSD_PROFILES_INI" ]; then
         /^\[/             { in_section=0 }
         in_section && /^gsd$/ { print; exit }
     ' "$GSD_PROFILES_INI" | grep -q '^gsd$'; then
-        if [ -d "$GSD_STAGING" ]; then
+        if [ -d "$GSD_HOST_STAGING" ]; then
             GSD_ACTIVE=true
         fi
     fi
@@ -385,9 +387,23 @@ if [ "$GSD_ACTIVE" = "true" ]; then
         printf 'GSD profile active — activating staging payload\n' >&2
     fi
 
+    # Copy the host-mounted staging into a slot-owned dir before any
+    # symlink/jq-merge step references it. Under rootless docker the host
+    # mount appears owned by an unmapped UID inside the container, so
+    # DOCKERUSER cannot read it (host ~/.claude is mode 700 by Claude
+    # Code's own design). Root in the container can read the mount in
+    # either rootful or rootless mode, so cp -a as root + chown to
+    # DOCKERUSER decouples runtime read access from the host UID mapping.
+    # Refresh on every launch so host-side `gsd-install.sh --update`
+    # propagates on the next claudebox start.
+    rm -rf "$GSD_LOCAL_STAGING"
+    mkdir -p "$GSD_LOCAL_STAGING"
+    cp -a "$GSD_HOST_STAGING/." "$GSD_LOCAL_STAGING/"
+    chown -R DOCKERUSER:DOCKERUSER "$GSD_LOCAL_STAGING"
+    GSD_STAGING="$GSD_LOCAL_STAGING"
+
     # Per-file symlinks for commands/gsd, agents, hooks. Symlink targets
-    # point at the read-only host bind mount, so the slot sees live host
-    # content without needing to copy.
+    # point at the slot-local staging copy populated above.
     for sub in commands/gsd agents hooks; do
         gsd_src_dir="$GSD_STAGING/$sub"
         gsd_dst_dir="$SLOT_HOME/$sub"
@@ -476,11 +492,11 @@ if [ "$GSD_ACTIVE" = "true" ]; then
         runuser -u DOCKERUSER -- bash -c '
             set -e
             settings="$HOME/.claude/settings.json"
-            fragment="/tmp/host-claude-home/gsd/settings.gsd.json"
+            fragment="$1"
             tmp=$(mktemp)
             jq -s ".[0] * .[1] * {\"_gsd_managed\": true}" "$settings" "$fragment" > "$tmp"
             mv "$tmp" "$settings"
-        '
+        ' _ "$GSD_STAGING/settings.gsd.json"
     fi
 else
     # Deactivation: sweep slot symlinks pointing into the GSD staging dir
@@ -490,6 +506,9 @@ else
     if [ "${VERBOSE:-false}" = "true" ]; then
         printf 'GSD profile inactive — sweeping prior activation state\n' >&2
     fi
+    # Match symlinks from both the legacy host-mount staging path (slots
+    # activated by older entrypoint versions) and the slot-local staging
+    # path used by the current rootless-safe activation.
     for sub in commands/gsd agents hooks; do
         gsd_sweep_dir="$SLOT_HOME/$sub"
         if [ ! -d "$gsd_sweep_dir" ]; then
@@ -501,7 +520,7 @@ else
             fi
             gsd_link_target=$(readlink "$gsd_f" 2>/dev/null || true)
             case "$gsd_link_target" in
-                /tmp/host-claude-home/gsd/*)
+                "$GSD_HOST_STAGING"/*|"$GSD_LOCAL_STAGING"/*)
                     runuser -u DOCKERUSER -- rm -f "$gsd_f"
                     ;;
             esac
@@ -517,13 +536,18 @@ else
     if [ -L "$gsd_sweep_wf" ]; then
         gsd_link_target=$(readlink "$gsd_sweep_wf" 2>/dev/null || true)
         case "$gsd_link_target" in
-            /tmp/host-claude-home/gsd/*)
+            "$GSD_HOST_STAGING"/*|"$GSD_LOCAL_STAGING"/*)
                 runuser -u DOCKERUSER -- rm -f "$gsd_sweep_wf"
                 ;;
         esac
     fi
     if [ -d "$SLOT_HOME/get-shit-done" ] && [ -z "$(ls -A "$SLOT_HOME/get-shit-done" 2>/dev/null)" ]; then
         runuser -u DOCKERUSER -- rmdir "$SLOT_HOME/get-shit-done" 2>/dev/null || true
+    fi
+
+    # Slot-local staging copy (current activation format).
+    if [ -e "$GSD_LOCAL_STAGING" ]; then
+        rm -rf "$GSD_LOCAL_STAGING"
     fi
 
     # Restore settings.json:
