@@ -10,7 +10,7 @@
 # into the slot's settings.json.
 #
 # Pair this with `claudebox add gsd` (which adds the gsd profile to the
-# project's profiles.ini and installs @gsd-build/sdk into the image).
+# project's profiles.ini and installs get-shit-done-cc into the image).
 #
 # Layout of the upstream payload (gsd-build/get-shit-done) and where each
 # piece lands in the staging dir:
@@ -102,7 +102,7 @@ The staging dir is inert until a slot has the `gsd` profile in its
 profiles.ini — at that point build/docker-entrypoint wires it into the slot.
 
 Pair with `claudebox add gsd` (per project) to add the profile and install
-the @gsd-build/sdk CLI into the slot image.
+the get-shit-done-cc CLI (which ships gsd-sdk with the full query subcommand) into the slot image.
 EOF
 }
 

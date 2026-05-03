@@ -151,7 +151,7 @@ per-project opt-in via the `gsd` profile.
 **Per project:**
 
 ```bash
-# Add the gsd profile: installs @gsd-build/sdk into the slot image, and
+# Add the gsd profile: installs get-shit-done-cc into the slot image, and
 # the entrypoint wires the staging payload into the slot's ~/.claude/
 # (per-file symlinks for commands/agents/hooks; merged settings.json).
 claudebox add gsd

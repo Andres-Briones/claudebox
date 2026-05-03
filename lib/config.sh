@@ -74,7 +74,7 @@ get_profile_packages() {
         latex) echo "" ;;  # Custom install via heredoc
         wolfram) echo "" ;;  # Custom install via heredoc
         wolfram-cloud) echo "" ;;  # Standalone wolframscript
-        gsd) echo "" ;;  # @gsd-build/sdk installed via npm in get_profile_gsd
+        gsd) echo "" ;;  # get-shit-done-cc installed via npm in get_profile_gsd
         *) echo "" ;;
     esac
 }
@@ -105,7 +105,7 @@ get_profile_description() {
         latex)   echo "LaTeX + Emacs (TeX Live full, Emacs, feynmp-auto for Feynman diagrams)" ;;
         wolfram) echo "Wolfram Engine 14 (Mathematica kernel, wolframscript)" ;;
         wolfram-cloud) echo "Wolfram Cloud (Python wolframclient, cloud computation, no local engine)" ;;
-        gsd) echo "GSD (Get Shit Done) workflow CLI - @gsd-build/sdk; markdown payload installed separately via scripts/gsd-install.sh" ;;
+        gsd) echo "GSD (Get Shit Done) workflow CLI - get-shit-done-cc (provides gsd-sdk with full query subcommand); markdown payload installed separately via scripts/gsd-install.sh" ;;
         *) echo "" ;;
     esac
 }
@@ -336,7 +336,7 @@ EOF
 get_profile_gsd() {
     cat << 'EOF'
 USER claude
-RUN bash -c "source $NVM_DIR/nvm.sh && npm install -g @gsd-build/sdk"
+RUN bash -c "source $NVM_DIR/nvm.sh && npm install -g get-shit-done-cc"
 USER root
 EOF
 }
