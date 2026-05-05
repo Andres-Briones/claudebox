@@ -61,6 +61,7 @@ get_profile_packages() {
         go) echo "" ;;  # Installed from tarball
         flutter) echo "" ;;  # Installed from source
         javascript) echo "" ;;  # Installed via nvm
+        bun) echo "" ;;  # Installed via curl installer
         java) echo "" ;;  # Java installed via SDKMan, build tools in profile function
         ruby) echo "ruby-full ruby-dev libreadline-dev libyaml-dev libsqlite3-dev sqlite3 libxml2-dev libxslt1-dev libcurl4-openssl-dev software-properties-common" ;;
         php) echo "php php-cli php-fpm php-mysql php-pgsql php-sqlite3 php-curl php-gd php-mbstring php-xml php-zip composer" ;;
@@ -75,6 +76,7 @@ get_profile_packages() {
         wolfram) echo "" ;;  # Custom install via heredoc
         wolfram-cloud) echo "" ;;  # Standalone wolframscript
         gsd) echo "" ;;  # get-shit-done-cc installed via npm in get_profile_gsd
+        bun) echo "" ;;
         *) echo "" ;;
     esac
 }
@@ -92,6 +94,7 @@ get_profile_description() {
         go) echo "Go Development (installed from upstream archive)" ;;
         flutter) echo "Flutter Development (installed from fvm)" ;;
         javascript) echo "JavaScript/TypeScript (Node installed via nvm)" ;;
+        bun) echo "Bun JavaScript Runtime (installed via official installer)" ;;
         java) echo "Java Development (latest LTS, Maven, Gradle, Ant via SDKMan)" ;;
         ruby) echo "Ruby Development (gems, native deps, XML/YAML)" ;;
         php) echo "PHP Development (PHP + extensions + Composer)" ;;
@@ -111,7 +114,7 @@ get_profile_description() {
 }
 
 get_all_profile_names() {
-    echo "core build-tools shell networking c openwrt rust python go flutter javascript java ruby php database devops web embedded datascience security ml latex wolfram wolfram-cloud gsd"
+    echo "core build-tools shell networking c openwrt rust python go flutter javascript bun java ruby php database devops web embedded datascience security ml latex wolfram wolfram-cloud gsd"
 }
 
 profile_exists() {
@@ -134,6 +137,7 @@ expand_profile() {
             echo "$1"
             ;;
         latex|wolfram|wolfram-cloud) echo "$1" ;;
+        bun) echo "core bun" ;;
         gsd) echo "core javascript gsd" ;;
         *)
             echo "$1"
@@ -341,6 +345,17 @@ USER root
 EOF
 }
 
+get_profile_bun() {
+    cat << 'EOF'
+ENV BUN_INSTALL="/home/claude/.bun"
+ENV PATH="/home/claude/.bun/bin:$PATH"
+USER claude
+RUN curl -fsSL https://bun.sh/install | bash
+RUN bun --version
+USER root
+EOF
+}
+
 get_profile_java() {
     cat << 'EOF'
 USER claude
@@ -486,4 +501,4 @@ export -f get_profile_file_path read_config_value read_profile_section update_pr
 export -f get_profile_core get_profile_build_tools get_profile_shell get_profile_networking get_profile_c get_profile_openwrt
 export -f get_profile_rust get_profile_python get_profile_go get_profile_flutter get_profile_javascript get_profile_java get_profile_ruby
 export -f get_profile_php get_profile_database get_profile_devops get_profile_web get_profile_embedded get_profile_datascience
-export -f get_profile_security get_profile_ml get_profile_latex get_profile_wolfram get_profile_wolfram_cloud
+export -f get_profile_security get_profile_ml get_profile_latex get_profile_wolfram get_profile_wolfram_cloud get_profile_gsd get_profile_bun
