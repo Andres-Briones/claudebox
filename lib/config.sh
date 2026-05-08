@@ -66,7 +66,7 @@ get_profile_packages() {
         ruby) echo "ruby-full ruby-dev libreadline-dev libyaml-dev libsqlite3-dev sqlite3 libxml2-dev libxslt1-dev libcurl4-openssl-dev software-properties-common" ;;
         php) echo "php php-cli php-fpm php-mysql php-pgsql php-sqlite3 php-curl php-gd php-mbstring php-xml php-zip composer" ;;
         database) echo "postgresql-client mysql-client sqlite3 redis-tools mongodb-clients" ;;
-        devops) echo "docker.io docker-compose kubectl helm terraform ansible awscli" ;;
+        devops) echo "docker.io docker-compose ansible awscli" ;;
         web) echo "nginx apache2-utils httpie" ;;
         embedded) echo "gcc-arm-none-eabi gdb-multiarch openocd picocom minicom screen" ;;
         datascience) echo "r-base" ;;
@@ -397,10 +397,32 @@ get_profile_database() {
 }
 
 get_profile_devops() {
-    local packages=$(get_profile_packages "devops")
-    if [[ -n "$packages" ]]; then
-        echo "RUN apt-get update && apt-get install -y $packages && apt-get clean"
-    fi
+    # kubectl, helm, terraform are not in Debian apt — installed from upstream
+    # repos / installers below. docker.io / docker-compose / ansible / awscli
+    # come from Debian.
+    cat << 'EOF'
+RUN apt-get update && apt-get install -y docker.io docker-compose ansible awscli && apt-get clean
+
+# kubectl from Kubernetes apt repo
+RUN install -m 0755 -d /etc/apt/keyrings && \
+    curl -fsSL https://pkgs.k8s.io/core:/stable:/v1.31/deb/Release.key | \
+        gpg --dearmor -o /etc/apt/keyrings/kubernetes-apt-keyring.gpg && \
+    chmod 644 /etc/apt/keyrings/kubernetes-apt-keyring.gpg && \
+    echo "deb [signed-by=/etc/apt/keyrings/kubernetes-apt-keyring.gpg] https://pkgs.k8s.io/core:/stable:/v1.31/deb/ /" \
+        > /etc/apt/sources.list.d/kubernetes.list && \
+    apt-get update && apt-get install -y kubectl && apt-get clean
+
+# helm via official installer script
+RUN curl -fsSL https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
+
+# terraform from HashiCorp apt repo
+RUN curl -fsSL https://apt.releases.hashicorp.com/gpg | \
+        gpg --dearmor -o /etc/apt/keyrings/hashicorp-archive-keyring.gpg && \
+    chmod 644 /etc/apt/keyrings/hashicorp-archive-keyring.gpg && \
+    echo "deb [signed-by=/etc/apt/keyrings/hashicorp-archive-keyring.gpg] https://apt.releases.hashicorp.com bookworm main" \
+        > /etc/apt/sources.list.d/hashicorp.list && \
+    apt-get update && apt-get install -y terraform && apt-get clean
+EOF
 }
 
 get_profile_web() {
