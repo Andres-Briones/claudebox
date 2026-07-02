@@ -492,7 +492,7 @@ get_profile_wolfram() {
     # free account at wolfram.com/engine/free-license
     cat << 'EOF'
 RUN DEBIAN_FRONTEND=noninteractive apt-get update && \
-    DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends xz-utils curl && \
+    DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends xz-utils curl libfaketime faketime && \
     apt-get clean && rm -rf /var/lib/apt/lists/*
 RUN curl -L "https://account.wolfram.com/dl/WolframEngine?platform=Linux" -o /tmp/LINUX && \
     chmod +x /tmp/LINUX && \
