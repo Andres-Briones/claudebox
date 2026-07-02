@@ -567,31 +567,57 @@ build_docker_image() {
     local profile_installations=""
     local profile_hash=""
     local profiles_file_hash=""
-    
+    local base_image="claudebox-core"
+    local heavy_profiles_sorted=()
+
     if [[ -f "$profiles_file" ]]; then
         profiles_file_hash=$(crc32_file "$profiles_file")
-        
+
         local current_profiles=()
         while IFS= read -r line; do
             [[ -n "$line" ]] && current_profiles+=("$line")
         done < <(read_profile_section "$profiles_file" "profiles")
-        
-        # Generate profile installations
+
+        # Split profiles into "heavy" (get shared base images) and normal.
+        # Heavy profiles are sorted alphabetically so chain tags are stable
+        # across projects with the same heavy set.
+        local heavy_raw=()
+        local normal_profiles=()
         for profile in "${current_profiles[@]}"; do
             profile=$(echo "$profile" | tr -d '[:space:]')
             [[ -z "$profile" ]] && continue
-            
-            # Convert hyphens to underscores for function names
+            if is_heavy_profile "$profile"; then
+                heavy_raw+=("$profile")
+            else
+                normal_profiles+=("$profile")
+            fi
+        done
+        if [[ ${#heavy_raw[@]} -gt 0 ]]; then
+            while IFS= read -r h; do
+                [[ -n "$h" ]] && heavy_profiles_sorted+=("$h")
+            done < <(printf '%s\n' "${heavy_raw[@]}" | sort -u)
+        fi
+
+        # Build shared base-image chain for heavies (idempotent) and pick
+        # the deepest tag as the project image's FROM.
+        if [[ ${#heavy_profiles_sorted[@]} -gt 0 ]]; then
+            ensure_heavy_profile_base_chain "$build_context" "${heavy_profiles_sorted[@]}"
+            base_image=$(heavy_chain_tag "${heavy_profiles_sorted[@]}")
+        fi
+
+        # Generate profile installations for NORMAL profiles only. Heavy
+        # profile snippets are already baked into the base image chain.
+        for profile in "${normal_profiles[@]}"; do
             local profile_fn="get_profile_${profile//-/_}"
             if type -t "$profile_fn" >/dev/null; then
                 profile_installations+=$'\n'"$($profile_fn)"
             fi
         done
-        
+
         # Calculate hash only for Docker-affecting profiles
         local docker_profiles=()
         local python_only_profiles=("ml" "datascience")
-        
+
         for profile in "${current_profiles[@]}"; do
             local is_python_only=false
             for py_profile in "${python_only_profiles[@]}"; do
@@ -604,7 +630,7 @@ build_docker_image() {
                 docker_profiles+=("$profile")
             fi
         done
-        
+
         if [[ ${#docker_profiles[@]} -gt 0 ]]; then
             profile_hash=$(printf '%s\n' "${docker_profiles[@]}" | sort | cksum | cut -d' ' -f1)
         fi
@@ -630,17 +656,19 @@ LABEL claudebox.project=\"$project_folder_name\""
     
     # Replace WHOLE lines that contain the placeholders (with optional spaces)
     local final_dockerfile
-    final_dockerfile=$(awk -v pi="$profile_installations" -v lbs="$labels" '
+    final_dockerfile=$(awk -v pi="$profile_installations" -v lbs="$labels" -v bi="$base_image" '
     # If the whole line is {{ PROFILE_INSTALLATIONS }}, print injected block and skip
     /^[[:space:]]*\{\{[[:space:]]*PROFILE_INSTALLATIONS[[:space:]]*\}\}[[:space:]]*$/ { print pi; next }
     # If the whole line is {{ LABELS }}, print labels block and skip
     /^[[:space:]]*\{\{[[:space:]]*LABELS[[:space:]]*\}\}[[:space:]]*$/ { print lbs; next }
-    # Otherwise, print the line unchanged
-    { print }
+    # BASE_IMAGE is a token inside a FROM line — substitute in place.
+    { gsub(/\{\{[[:space:]]*BASE_IMAGE[[:space:]]*\}\}/, bi); print }
     ' <<<"$base_dockerfile") || error "Failed to apply Dockerfile substitutions"
 
     # Guard: ensure no unreplaced placeholders remain
-    if grep -q '{{PROFILE_INSTALLATIONS}}' <<<"$final_dockerfile" || grep -q '{{LABELS}}' <<<"$final_dockerfile"; then
+    if grep -q '{{PROFILE_INSTALLATIONS}}' <<<"$final_dockerfile" \
+       || grep -q '{{LABELS}}' <<<"$final_dockerfile" \
+       || grep -q '{{BASE_IMAGE}}' <<<"$final_dockerfile"; then
     error "Unreplaced placeholders remain in generated Dockerfile"
     fi
 

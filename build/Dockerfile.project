@@ -1,5 +1,8 @@
-# Project-specific Dockerfile that builds on top of claudebox-core
-FROM claudebox-core
+# Project-specific Dockerfile that builds on top of a shared base.
+# BASE_IMAGE defaults to claudebox-core; if the project has any heavy
+# profiles (latex, wolfram, ...), it's a shared claudebox-<heavies>-base
+# tag built once and reused across all projects with the same heavy set.
+FROM {{BASE_IMAGE}}
 
 # Switch to root for installations
 USER root

@@ -490,16 +490,287 @@ get_profile_wolfram() {
     #   wolframscript
     # It will prompt for your Wolfram ID (email) and password from your
     # free account at wolfram.com/engine/free-license
+    #
+    # The installer is downloaded once to ${CLAUDEBOX_HOME}/wolfram/installer/
+    # by prepare_wolfram_installer() and copied into the build context, so
+    # rebuilds (even --no-cache) don't re-fetch the ~5 GB payload.
     cat << 'EOF'
 RUN DEBIAN_FRONTEND=noninteractive apt-get update && \
-    DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends xz-utils curl libfaketime faketime && \
+    DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends xz-utils libfaketime faketime && \
     apt-get clean && rm -rf /var/lib/apt/lists/*
-RUN curl -L "https://account.wolfram.com/dl/WolframEngine?platform=Linux" -o /tmp/LINUX && \
-    chmod +x /tmp/LINUX && \
+COPY wolfram-installer.sh /tmp/LINUX
+RUN chmod +x /tmp/LINUX && \
     /tmp/LINUX -- -auto -execdir=/usr/local/bin -verbose < /dev/null && \
     rm -f /tmp/LINUX
 RUN mkdir -p /home/claude/.WolframEngine/Licensing && chown -R claude:claude /home/claude/.WolframEngine
 EOF
+}
+
+# ---------------------------------------------------------------------------
+# Concurrency: portable mkdir-based advisory locks
+# ---------------------------------------------------------------------------
+# Multiple `claudebox` launches can race on shared resources: the wolfram
+# installer download and the shared heavy-base image builds. `mkdir` is
+# atomic on POSIX filesystems, so we use it as a lock. Stale locks (whose
+# holder process died) are detected via a PID file and cleared automatically.
+
+# Acquire the given lock, blocking up to $timeout seconds. Prints a wait
+# message after 5s. Aborts via error() on timeout.
+_acquire_lock() {
+    local lock_dir="$1"
+    local timeout="${2:-1800}"   # default 30 min
+    local wait_start
+    wait_start=$(date +%s)
+    local warned=false
+
+    mkdir -p "$(dirname "$lock_dir")"
+
+    while ! mkdir "$lock_dir" 2>/dev/null; do
+        # Stale-lock check: if the recorded PID no longer exists, break in.
+        local holder_pid=""
+        if [[ -r "$lock_dir/pid" ]]; then
+            holder_pid=$(cat "$lock_dir/pid" 2>/dev/null || printf '')
+        fi
+        if [[ -n "$holder_pid" ]] && ! kill -0 "$holder_pid" 2>/dev/null; then
+            warn "Removing stale lock $lock_dir (holder PID $holder_pid is no longer running)"
+            rm -rf "$lock_dir" 2>/dev/null || true
+            continue
+        fi
+
+        local elapsed=$(( $(date +%s) - wait_start ))
+        if [[ $elapsed -ge $timeout ]]; then
+            error "Timed out after ${timeout}s waiting for lock $lock_dir. If no other claudebox is running, remove the lock directory manually and retry."
+        fi
+        if [[ "$warned" == "false" ]] && [[ $elapsed -ge 5 ]]; then
+            info "Waiting for another claudebox process (lock: $lock_dir)..."
+            warned=true
+        fi
+        sleep 1
+    done
+
+    printf '%s\n' "$$" > "$lock_dir/pid" 2>/dev/null || true
+}
+
+# Release the given lock. Safe to call on a lock we don't hold.
+_release_lock() {
+    local lock_dir="$1"
+    rm -rf "$lock_dir" 2>/dev/null || true
+}
+
+# ---------------------------------------------------------------------------
+# Heavy profiles — shared base images
+# ---------------------------------------------------------------------------
+# Some profiles install multi-GB payloads (wolfram engine, texlive). Applying
+# them as per-project layers duplicates the payload on disk for every project.
+# We instead build one shared "base" image per heavy-profile chain, tag it,
+# and have project images FROM the deepest matching chain.
+#
+# Chain naming: heavies are sorted alphabetically and joined with '+'.
+#   heavies=()                 -> claudebox-core           (no chain built)
+#   heavies=(latex)            -> claudebox-latex-base
+#   heavies=(wolfram)          -> claudebox-wolfram-base
+#   heavies=(latex wolfram)    -> claudebox-latex+wolfram-base
+#                                  (built FROM claudebox-latex-base)
+#
+# Each shared base carries a `claudebox.parent=<parent-image-id>` label so we
+# can detect when the parent has been rebuilt and the base is stale.
+
+# List of profile names treated as heavy (one per line).
+# Extend this list to opt more profiles into shared-base sharing.
+_heavy_profile_names() {
+    printf '%s\n' latex wolfram
+}
+
+# Is $1 a heavy profile? Returns 0 if yes, 1 if no.
+is_heavy_profile() {
+    local candidate="$1"
+    local p
+    while IFS= read -r p; do
+        if [[ "$p" == "$candidate" ]]; then
+            return 0
+        fi
+    done < <(_heavy_profile_names)
+    return 1
+}
+
+# Compute the shared-base tag for a sorted list of heavy profiles.
+# No args -> claudebox-core.
+heavy_chain_tag() {
+    if [[ $# -eq 0 ]]; then
+        printf 'claudebox-core'
+        return 0
+    fi
+    local joined
+    joined=$(IFS='+'; printf '%s' "$*")
+    printf 'claudebox-%s-base' "$joined"
+}
+
+# Stage any host-cached assets a heavy profile needs into the build context
+# before its Dockerfile snippet runs. Called during heavy-base builds.
+_prepare_heavy_profile_assets() {
+    local profile="$1"
+    local build_context="$2"
+    case "$profile" in
+        wolfram)
+            prepare_wolfram_installer "$build_context"
+            ;;
+        latex)
+            : # No cached asset; RUN fetches feynmp-auto from CTAN at build time.
+            ;;
+    esac
+}
+
+# Ensure the full chain of shared-base images exists for a sorted list of
+# heavy profiles. Builds each tier lazily. Idempotent.
+#   $1        build_context (docker build context path)
+#   $2..$N    sorted heavy profile names
+ensure_heavy_profile_base_chain() {
+    local build_context="$1"
+    shift
+    if [[ $# -eq 0 ]]; then
+        return 0
+    fi
+
+    local heavies=("$@")
+    local parent="claudebox-core"
+    local i
+    for (( i = 0; i < ${#heavies[@]}; i++ )); do
+        local sub_chain=("${heavies[@]:0:$((i + 1))}")
+        local tag
+        tag=$(heavy_chain_tag "${sub_chain[@]}")
+        _ensure_heavy_base_image "$tag" "$parent" "${heavies[$i]}" "$build_context"
+        parent="$tag"
+    done
+}
+
+# Internal: is $tag present with a parent label matching $parent_id?
+_heavy_base_up_to_date() {
+    local tag="$1"
+    local parent_id="$2"
+    if ! docker image inspect "$tag" >/dev/null 2>&1; then
+        return 1
+    fi
+    local match
+    match=$(docker images \
+        --filter "reference=$tag" \
+        --filter "label=claudebox.parent=$parent_id" \
+        -q 2>/dev/null | head -1)
+    [[ -n "$match" ]]
+}
+
+# Build one shared-base image if it doesn't exist or its parent has changed.
+# Locked so parallel claudebox launches don't both build the same tag.
+_ensure_heavy_base_image() {
+    local tag="$1"
+    local parent="$2"
+    local profile="$3"
+    local build_context="$4"
+
+    local parent_id
+    parent_id=$(docker image inspect --format '{{.Id}}' "$parent" 2>/dev/null || true)
+    if [[ -z "$parent_id" ]]; then
+        error "$parent not found; cannot build $tag"
+    fi
+
+    # Fast path: already up to date, no lock needed.
+    if _heavy_base_up_to_date "$tag" "$parent_id"; then
+        return 0
+    fi
+
+    # Serialize concurrent builders of the same tag.
+    local lock_dir="${CLAUDEBOX_HOME}/locks/heavy-base-${tag}.lock"
+    _acquire_lock "$lock_dir" 5400   # 90 min: wolfram install can be slow
+
+    # Re-check under the lock: another process may have finished the build
+    # while we were waiting.
+    if _heavy_base_up_to_date "$tag" "$parent_id"; then
+        _release_lock "$lock_dir"
+        return 0
+    fi
+
+    if docker image inspect "$tag" >/dev/null 2>&1; then
+        info "$tag is stale (parent $parent changed); rebuilding"
+    fi
+
+    local profile_fn="get_profile_${profile//-/_}"
+    if ! type -t "$profile_fn" >/dev/null; then
+        _release_lock "$lock_dir"
+        error "No profile function $profile_fn for heavy profile $profile"
+    fi
+
+    # NOTE: _prepare_heavy_profile_assets writes into the shared build
+    # context. That's a separate race from this lock — see notes at the
+    # top of the file. In practice wolfram asset staging is itself locked;
+    # latex has no host asset.
+    _prepare_heavy_profile_assets "$profile" "$build_context"
+
+    local snippet
+    snippet=$($profile_fn)
+
+    local base_dockerfile="$build_context/Dockerfile.$tag"
+    {
+        printf 'FROM %s\n' "$parent"
+        printf 'USER root\n'
+        printf '%s\n' "$snippet"
+    } > "$base_dockerfile"
+
+    info "Building shared base image $tag (one-time; will be reused across projects)..."
+    export DOCKER_BUILDKIT=1
+    if ! docker build \
+        --progress="${BUILDKIT_PROGRESS:-auto}" \
+        --build-arg BUILDKIT_INLINE_CACHE=1 \
+        --label "claudebox.type=heavy-base" \
+        --label "claudebox.profile=$profile" \
+        --label "claudebox.parent=$parent_id" \
+        -f "$base_dockerfile" -t "$tag" "$build_context"; then
+        _release_lock "$lock_dir"
+        error "Failed to build shared base image $tag"
+    fi
+
+    _release_lock "$lock_dir"
+}
+
+# Ensure the Wolfram Engine Linux installer is cached on the host and copied
+# into the docker build context so the wolfram profile's Dockerfile snippet
+# can COPY it in instead of curl-ing it on every build.
+#
+# Args:
+#   $1  build_context  path passed to `docker build` (installer is placed at
+#                      $build_context/wolfram-installer.sh)
+prepare_wolfram_installer() {
+    local build_context="$1"
+    local cache_dir="${CLAUDEBOX_HOME}/wolfram/installer"
+    local cached="$cache_dir/WolframEngine-linux.sh"
+    local url="https://account.wolfram.com/dl/WolframEngine?platform=Linux"
+
+    mkdir -p "$cache_dir"
+
+    # Lock so parallel claudebox launches don't clobber each other's
+    # download of the ~5 GB installer.
+    local lock_dir="${CLAUDEBOX_HOME}/locks/wolfram-installer.lock"
+    _acquire_lock "$lock_dir" 2700   # 45 min
+
+    # Re-check after acquiring: another process may have finished the download
+    # while we were waiting.
+    if [[ ! -s "$cached" ]]; then
+        info "Downloading Wolfram Engine installer (one-time, cached at $cached)..."
+        local tmp="${cached}.part"
+        rm -f "$tmp"
+        if ! curl -fL --retry 3 -o "$tmp" "$url"; then
+            rm -f "$tmp"
+            _release_lock "$lock_dir"
+            error "Failed to download Wolfram Engine installer from $url"
+        fi
+        mv -f "$tmp" "$cached"
+    fi
+
+    if ! cp "$cached" "$build_context/wolfram-installer.sh"; then
+        _release_lock "$lock_dir"
+        error "Failed to stage Wolfram installer into build context"
+    fi
+    chmod +x "$build_context/wolfram-installer.sh"
+
+    _release_lock "$lock_dir"
 }
 
 get_profile_wolfram_cloud() {
@@ -524,3 +795,7 @@ export -f get_profile_core get_profile_build_tools get_profile_shell get_profile
 export -f get_profile_rust get_profile_python get_profile_go get_profile_flutter get_profile_javascript get_profile_java get_profile_ruby
 export -f get_profile_php get_profile_database get_profile_devops get_profile_web get_profile_embedded get_profile_datascience
 export -f get_profile_security get_profile_ml get_profile_latex get_profile_wolfram get_profile_wolfram_cloud get_profile_gsd get_profile_bun
+export -f prepare_wolfram_installer
+export -f _heavy_profile_names is_heavy_profile heavy_chain_tag
+export -f _prepare_heavy_profile_assets ensure_heavy_profile_base_chain _ensure_heavy_base_image
+export -f _acquire_lock _release_lock _heavy_base_up_to_date
