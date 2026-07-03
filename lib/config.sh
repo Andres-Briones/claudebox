@@ -565,11 +565,12 @@ _release_lock() {
 # We instead build one shared "base" image per heavy-profile chain, tag it,
 # and have project images FROM the deepest matching chain.
 #
-# Chain naming: heavies are sorted alphabetically and joined with '+'.
+# Chain naming: heavies are sorted alphabetically and joined with '_'.
+# ('+' is not a legal Docker tag character.)
 #   heavies=()                 -> claudebox-core           (no chain built)
 #   heavies=(latex)            -> claudebox-latex-base
 #   heavies=(wolfram)          -> claudebox-wolfram-base
-#   heavies=(latex wolfram)    -> claudebox-latex+wolfram-base
+#   heavies=(latex wolfram)    -> claudebox-latex_wolfram-base
 #                                  (built FROM claudebox-latex-base)
 #
 # Each shared base carries a `claudebox.parent=<parent-image-id>` label so we
@@ -601,7 +602,7 @@ heavy_chain_tag() {
         return 0
     fi
     local joined
-    joined=$(IFS='+'; printf '%s' "$*")
+    joined=$(IFS='_'; printf '%s' "$*")
     printf 'claudebox-%s-base' "$joined"
 }
 
