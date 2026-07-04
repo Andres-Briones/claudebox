@@ -159,17 +159,28 @@ warn_legacy() {
     fi
 }
 
-# Install the workflows payload. Command stubs `@`-reference
-# ~/.claude/get-shit-done/workflows/<name>.md; the activation step in the
-# entrypoint creates that path as a symlink to here.
+# Install the get-shit-done payload subdirs the command @-includes reference.
+# Command stubs `@`-reference ~/.claude/get-shit-done/{workflows,references,
+# templates}/<name>.md; the activation step in the entrypoint creates those
+# paths as symlinks to here. `workflows` is required (die if absent);
+# `references`/`templates` are referenced by the plan/execute/new-project
+# commands and must be staged too, else those commands hit dangling
+# @-includes inside the slot — but skip-with-warning if upstream drops them.
 install_workflows() {
-    local src="${GSD_SRC}/get-shit-done/workflows"
-    local dst="${STAGING}/workflows"
-    if [ ! -d "$src" ]; then
-        die "upstream payload missing: $src (re-run with --update?)"
-    fi
-    log "  installing workflows → ${dst}/"
-    mirror_dir "$src" "$dst"
+    local sub src dst
+    for sub in workflows references templates; do
+        src="${GSD_SRC}/get-shit-done/${sub}"
+        dst="${STAGING}/${sub}"
+        if [ ! -d "$src" ]; then
+            if [ "$sub" = "workflows" ]; then
+                die "upstream payload missing: $src (re-run with --update?)"
+            fi
+            log "  note: upstream get-shit-done/${sub} absent — skipping"
+            continue
+        fi
+        log "  installing ${sub} → ${dst}/"
+        mirror_dir "$src" "$dst"
+    done
 }
 
 is_excluded_hook() {
@@ -392,7 +403,7 @@ main() {
     log ""
     log "Done. GSD staging populated at ${STAGING}/:"
     local d
-    for d in "${STAGING}/commands/gsd" "${STAGING}/agents" "${STAGING}/workflows" "${STAGING}/hooks"; do
+    for d in "${STAGING}/commands/gsd" "${STAGING}/agents" "${STAGING}/workflows" "${STAGING}/references" "${STAGING}/templates" "${STAGING}/hooks"; do
         if [ -d "$d" ] && [ -n "$(ls -A "$d" 2>/dev/null)" ]; then
             log "  ${d}/ ($(find "$d" -type f | wc -l | tr -d ' ') files)"
         fi

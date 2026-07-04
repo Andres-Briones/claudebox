@@ -443,7 +443,10 @@ if [ "$GSD_ACTIVE" = "true" ]; then
 
     # Workflows: command stubs @-reference ~/.claude/get-shit-done/workflows/.
     # Create the get-shit-done dir as a real dir in the slot, then symlink
-    # workflows under it (avoids exposing host bin/lib if upstream ships them).
+    # workflows/references/templates under it (avoids exposing host bin/lib if
+    # upstream ships them). Command @-includes reference all three subdirs
+    # (e.g. /gsd:new-project pulls in references/ + templates/); wiring only
+    # workflows leaves those commands with dangling includes.
     if [ -d "$GSD_STAGING/workflows" ]; then
         # The slot may have a stale ~/.claude/get-shit-done symlink from the
         # pre-staging install (host-merge loop auto-linked the whole host
@@ -461,13 +464,18 @@ if [ "$GSD_ACTIVE" = "true" ]; then
             runuser -u DOCKERUSER -- rm -rf "$gsd_gsd_dir"
         fi
         runuser -u DOCKERUSER -- mkdir -p "$gsd_gsd_dir"
-        gsd_wf_target="$gsd_gsd_dir/workflows"
-        if [ ! -L "$gsd_wf_target" ]; then
-            if [ -e "$gsd_wf_target" ]; then
-                runuser -u DOCKERUSER -- rm -rf "$gsd_wf_target"
+        for gsd_sub in workflows references templates; do
+            if [ ! -d "$GSD_STAGING/$gsd_sub" ]; then
+                continue
             fi
-            runuser -u DOCKERUSER -- ln -s "$GSD_STAGING/workflows" "$gsd_wf_target"
-        fi
+            gsd_sub_target="$gsd_gsd_dir/$gsd_sub"
+            if [ ! -L "$gsd_sub_target" ]; then
+                if [ -e "$gsd_sub_target" ]; then
+                    runuser -u DOCKERUSER -- rm -rf "$gsd_sub_target"
+                fi
+                runuser -u DOCKERUSER -- ln -s "$GSD_STAGING/$gsd_sub" "$gsd_sub_target"
+            fi
+        done
     fi
 
     # jq-merge the settings fragment into the slot's settings.json. Backup
@@ -531,16 +539,18 @@ else
         fi
     done
 
-    # Workflows symlink + parent dir.
-    gsd_sweep_wf="$SLOT_HOME/get-shit-done/workflows"
-    if [ -L "$gsd_sweep_wf" ]; then
-        gsd_link_target=$(readlink "$gsd_sweep_wf" 2>/dev/null || true)
-        case "$gsd_link_target" in
-            "$GSD_HOST_STAGING"/*|"$GSD_LOCAL_STAGING"/*)
-                runuser -u DOCKERUSER -- rm -f "$gsd_sweep_wf"
-                ;;
-        esac
-    fi
+    # get-shit-done payload symlinks + parent dir.
+    for gsd_sub in workflows references templates; do
+        gsd_sweep_wf="$SLOT_HOME/get-shit-done/$gsd_sub"
+        if [ -L "$gsd_sweep_wf" ]; then
+            gsd_link_target=$(readlink "$gsd_sweep_wf" 2>/dev/null || true)
+            case "$gsd_link_target" in
+                "$GSD_HOST_STAGING"/*|"$GSD_LOCAL_STAGING"/*)
+                    runuser -u DOCKERUSER -- rm -f "$gsd_sweep_wf"
+                    ;;
+            esac
+        fi
+    done
     if [ -d "$SLOT_HOME/get-shit-done" ] && [ -z "$(ls -A "$SLOT_HOME/get-shit-done" 2>/dev/null)" ]; then
         runuser -u DOCKERUSER -- rmdir "$SLOT_HOME/get-shit-done" 2>/dev/null || true
     fi
