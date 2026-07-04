@@ -19,7 +19,8 @@
 #                                      (only the workflows subdir; bin/lib
 #                                      not needed for our minimal install)
 #   agents/gsd-<name>.md            →  ~/.claude/gsd/agents/gsd-<name>.md
-#                                      (--full only)
+#                                      (both modes — minimal commands
+#                                      dispatch subagents too)
 #   hooks/gsd-*.{js,sh}             →  ~/.claude/gsd/hooks/gsd-*
 #                                      (always installed; excluded set below)
 #   claudebox/claude/settings.gsd.json  →  ~/.claude/gsd/settings.gsd.json
@@ -27,7 +28,7 @@
 #                                      sourced from this fork's seed dir)
 #
 # Usage:
-#   scripts/gsd-install.sh              # minimal install (5 commands + workflows + hooks + fragment)
+#   scripts/gsd-install.sh              # minimal install (5 commands + agents + workflows + hooks + fragment)
 #   scripts/gsd-install.sh --full       # full install (all commands + agents + workflows + hooks + fragment)
 #   scripts/gsd-install.sh --update     # git pull + re-copy current selection
 #   scripts/gsd-install.sh --uninstall  # remove ~/.claude/gsd + sweep legacy paths
@@ -92,7 +93,7 @@ usage() {
 gsd-install.sh — install GSD payload into ~/.claude/gsd/ staging dir
 
 Usage:
-  scripts/gsd-install.sh              minimal install (5 commands + workflows + hooks + fragment)
+  scripts/gsd-install.sh              minimal install (5 commands + agents + workflows + hooks + fragment)
   scripts/gsd-install.sh --full       full install (all commands + agents + workflows + hooks + fragment)
   scripts/gsd-install.sh --update     git pull + re-copy current selection
   scripts/gsd-install.sh --uninstall  remove ~/.claude/gsd + sweep legacy paths
@@ -215,6 +216,33 @@ install_hooks() {
     log "  installed ${copied} hooks → ${dst}/ (skipped ${skipped} per EXCLUDED_HOOKS)"
 }
 
+# Install GSD subagents to the staging agents/ dir (flat gsd-*.md files).
+# The activation step in the entrypoint per-file-symlinks them into the
+# slot's ~/.claude/agents/. Installed in BOTH minimal and full modes:
+# even the minimal command set dispatches subagents (e.g. /gsd:plan-phase
+# spawns gsd-planner + gsd-plan-checker, which in turn reference
+# gsd-verifier), so withholding agents leaves those commands broken. The
+# whole set is small (~30 markdown files), so we ship all of them rather
+# than trying to compute a fragile per-command closure.
+install_agents() {
+    local src="${GSD_SRC}/agents"
+    local dst="${STAGING}/agents"
+    if [ ! -d "$src" ]; then
+        log "  note: no agents/ dir in upstream payload — skipping agents"
+        return 0
+    fi
+    rm -rf "$dst"
+    mkdir -p "$dst"
+    local f copied=0
+    for f in "${src}"/gsd-*.md; do
+        if [ -f "$f" ]; then
+            cp "$f" "${dst}/$(basename "$f")"
+            copied=$((copied + 1))
+        fi
+    done
+    log "  installed ${copied} agents → ${dst}/"
+}
+
 # Copy the seed settings fragment from the fork. The activation step
 # jq-merges this into the slot's settings.json.
 install_settings_fragment() {
@@ -246,7 +274,7 @@ validate_hooks() {
 }
 
 install_minimal() {
-    log "Installing minimal GSD set (${#MINIMAL_COMMANDS[@]} commands + workflows + hooks + fragment)..."
+    log "Installing minimal GSD set (${#MINIMAL_COMMANDS[@]} commands + agents + workflows + hooks + fragment)..."
     local cmds_src="${GSD_SRC}/commands/gsd"
     local cmds_dst="${STAGING}/commands/gsd"
 
@@ -268,15 +296,16 @@ install_minimal() {
     done
     log "  copied ${copied}/${#MINIMAL_COMMANDS[@]} commands → ${cmds_dst}/"
 
+    install_agents
     install_workflows
     install_hooks
     install_settings_fragment
+    printf 'minimal\n' > "${STAGING}/.mode"
 }
 
 install_full() {
     log "Installing full GSD payload..."
     local cmds_src="${GSD_SRC}/commands/gsd"
-    local agents_src="${GSD_SRC}/agents"
 
     if [ ! -d "$cmds_src" ]; then
         die "upstream payload missing: $cmds_src (re-run with --update?)"
@@ -284,25 +313,11 @@ install_full() {
 
     mirror_dir "$cmds_src" "${STAGING}/commands/gsd"
 
-    # Agents ship as flat gsd-*.md files; copy them flat into staging/agents/.
-    # The activation step per-file-symlinks them into the slot's agents/ dir.
-    if [ -d "$agents_src" ]; then
-        local agents_dst="${STAGING}/agents"
-        rm -rf "$agents_dst"
-        mkdir -p "$agents_dst"
-        local f
-        for f in "${agents_src}"/gsd-*.md; do
-            if [ -f "$f" ]; then
-                cp "$f" "${agents_dst}/$(basename "$f")"
-            fi
-        done
-    else
-        log "  note: no agents/ dir in upstream payload — skipping agents"
-    fi
-
+    install_agents
     install_workflows
     install_hooks
     install_settings_fragment
+    printf 'full\n' > "${STAGING}/.mode"
 }
 
 uninstall() {
@@ -325,10 +340,19 @@ uninstall() {
     log "Done. (${GSD_SRC} left in place; remove manually if desired.)"
 }
 
-# Detect prior install mode by looking at the staging agents/ dir.
-# Full install ships agents; minimal does not.
+# Detect prior install mode from the ${STAGING}/.mode marker written by
+# install_minimal/install_full. For installs predating the marker, fall
+# back to command count: full mirrors every upstream command, minimal
+# ships only ${#MINIMAL_COMMANDS[@]}. (The old agents/-presence heuristic
+# no longer discriminates — both modes now stage agents.)
 detect_mode() {
-    if [ -d "${STAGING}/agents" ] && [ -n "$(ls -A "${STAGING}/agents" 2>/dev/null)" ]; then
+    if [ -f "${STAGING}/.mode" ]; then
+        head -n1 "${STAGING}/.mode"
+        return 0
+    fi
+    local n
+    n=$(find "${STAGING}/commands/gsd" -maxdepth 1 -name '*.md' -type f 2>/dev/null | wc -l | tr -d ' ')
+    if [ "$n" -gt "${#MINIMAL_COMMANDS[@]}" ]; then
         printf 'full\n'
     else
         printf 'minimal\n'
