@@ -66,6 +66,7 @@ This fork has diverged significantly from [upstream](https://github.com/RchGrav/
 - Missing `||` operator in Dockerfile placeholder guard (`main.sh`) — unreplaced `{{LABELS}}` placeholders were never detected
 - `local` keyword used outside functions in `docker-entrypoint` — caused container startup failure on venv setup and Python profile paths (lines 86, 109, 141)
 - **`claudebox update` now survives rebuilds** — upstream applies the Claude CLI update via `docker commit` on the project image only, so any image rebuild (profile change, entrypoint edit, `claudebox update all`) silently reverted Claude to the version baked into the shared base image. The fork records the updated version in `~/.claudebox/claude-code-version` and re-pins it on every project image rebuild via a `CLAUDE_CODE_VERSION` build arg
+- Stale `.update.lock` cleanup in `docker-entrypoint` used BSD `stat -f %m` first — on GNU coreutils `-f` means `--file-system`, so it "succeeded" with garbage, the lock was never removed, and updates aborted forever with "Another instance is currently performing an update"
 
 ### Installing This Fork
 
