@@ -770,19 +770,34 @@ _cmd_special() {
     
     # Show container output for commands that produce output
     docker logs "$temp_container" 2>&1
-    
-    # For update command, show version after update
-    if [[ "$cmd" == "update" ]]; then
-        docker exec -u "$DOCKER_USER" "$temp_container" bash -c "
-            source \$HOME/.nvm/nvm.sh && nvm use default >/dev/null 2>&1 && claude --version
-        " 2>/dev/null || true
-    fi
 
     # Commit changes back to image
     docker commit "$temp_container" "$IMAGE_NAME" >/dev/null
     docker stop "$temp_container" >/dev/null 2>&1 || true
     docker rm "$temp_container" >/dev/null 2>&1 || true
-    
+
+    # For update: probe the committed image for the resulting version and
+    # record it as a pin. Project images build FROM a shared base whose
+    # baked-in Claude is frozen at base-build time — without the pin, any
+    # rebuild silently reverts the update (see CLAUDE_CODE_VERSION in
+    # build/Dockerfile.project).
+    if [[ "$cmd" == "update" ]]; then
+        local version_output=""
+        version_output=$(docker run --rm -u "$DOCKER_USER" -e HOME="/home/$DOCKER_USER" \
+            --entrypoint bash "$IMAGE_NAME" -c \
+            'source "$NVM_DIR/nvm.sh" >/dev/null 2>&1 && nvm use default >/dev/null 2>&1 && claude --version' \
+            2>/dev/null) || true
+        if [[ -n "$version_output" ]]; then
+            printf '%s\n' "$version_output"
+            local claude_version="${version_output%% *}"
+            case "$claude_version" in
+                [0-9]*)
+                    printf '%s\n' "$claude_version" > "$HOME/.claudebox/claude-code-version"
+                    ;;
+            esac
+        fi
+    fi
+
     exit 0
 }
 

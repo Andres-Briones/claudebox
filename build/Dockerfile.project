@@ -15,6 +15,16 @@ USER root
 USER claude
 WORKDIR /workspace
 
+# Re-pin Claude Code to the version recorded by `claudebox update`.
+# The base image bakes in whatever version was latest when it was built,
+# so without this any rebuild would silently revert a `claudebox update`.
+# Empty pin (never updated) keeps the base image's version untouched.
+ARG CLAUDE_CODE_VERSION=""
+RUN bash -c 'if [ -n "$CLAUDE_CODE_VERSION" ]; then \
+        source "$NVM_DIR/nvm.sh" && nvm use default && \
+        npm install -g "@anthropic-ai/claude-code@$CLAUDE_CODE_VERSION"; \
+    fi'
+
 # Copy entrypoint (in case it needs updating)
 USER root
 COPY --chown=claude docker-entrypoint.sh /usr/local/bin/docker-entrypoint

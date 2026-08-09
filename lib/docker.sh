@@ -727,7 +727,15 @@ run_docker_build() {
         no_cache_flag="--no-cache"
         info "Forcing full rebuild (templates changed)"
     fi
-    
+
+    # Claude Code version pin recorded by `claudebox update` — re-applied on
+    # every rebuild so updates survive rebuilds (the base image's baked-in
+    # version would otherwise win). Empty pin = keep the base's version.
+    local claude_code_version=""
+    if [[ -f "$HOME/.claudebox/claude-code-version" ]]; then
+        claude_code_version=$(head -n1 "$HOME/.claudebox/claude-code-version")
+    fi
+
     docker build \
         $no_cache_flag \
         --progress=${BUILDKIT_PROGRESS:-auto} \
@@ -738,6 +746,7 @@ run_docker_build() {
         --build-arg NODE_VERSION="$NODE_VERSION" \
         --build-arg DELTA_VERSION="$DELTA_VERSION" \
         --build-arg REBUILD_TIMESTAMP="${CLAUDEBOX_REBUILD_TIMESTAMP:-}" \
+        --build-arg CLAUDE_CODE_VERSION="$claude_code_version" \
         -f "$1" -t "$IMAGE_NAME" "$2" || error "Docker build failed"
 }
 
