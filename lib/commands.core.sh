@@ -134,18 +134,37 @@ _cmd_shell() {
 }
 
 _cmd_update() {
+    # dispatch_command forwards the pass-through bucket too (flags destined
+    # for claude, e.g. --dangerously-skip-permissions) — only bare words are
+    # arguments to this command.
+    local word1=""
+    local word2=""
+    local arg
+    for arg in "$@"; do
+        case "$arg" in
+            -*)
+                continue
+                ;;
+        esac
+        if [[ -z "$word1" ]]; then
+            word1="$arg"
+        elif [[ -z "$word2" ]]; then
+            word2="$arg"
+        fi
+    done
+
     # "update all" used to download the single-file launcher from upstream
     # RchGrav/claudebox, overwriting this fork's installed script. The fork
     # is a git checkout — update it with git instead.
-    if [[ "${1:-}" == "all" ]]; then
+    if [[ "$word1" == "all" ]]; then
         warn "'update all' is disabled in this fork: it would overwrite the launcher with upstream's script."
         info "Update the launcher with: git -C $SCRIPT_DIR pull"
-        shift
+        word1="$word2"
     fi
 
     # The project image must exist — the update is applied by rebuilding it.
     if ! docker image inspect "$IMAGE_NAME" >/dev/null 2>&1; then
-        error "No Docker image found for this project folder: $PROJECT_DIR\nRun 'claudebox' first to build the image, or cd to your project directory."
+        error "No Docker image found for this project folder: $PROJECT_DIR — run 'claudebox' first to build the image, or cd to your project directory."
     fi
 
     # Updating inside a container cannot stick: containers are ephemeral and
@@ -153,7 +172,7 @@ _cmd_update() {
     # dies with the slot. The only state that persists is the image itself —
     # so pin the target version and rebuild. The pin layer sits above the
     # profile layers in Dockerfile.project, keeping the rebuild cheap.
-    local target_version="${1:-}"
+    local target_version="$word1"
     if [[ -z "$target_version" ]]; then
         local registry_url="https://registry.npmjs.org/@anthropic-ai/claude-code/latest"
         local registry_json=""
@@ -174,7 +193,7 @@ _cmd_update() {
 
     case "$target_version" in
         [0-9]*.[0-9]*.[0-9]*) ;;
-        *) error "Could not resolve a Claude Code version (got '${target_version:-nothing}').\nCheck access to registry.npmjs.org or pass one explicitly: claudebox update <version>" ;;
+        *) error "Could not resolve a Claude Code version (got '${target_version:-nothing}') — check access to registry.npmjs.org, or pass one explicitly: claudebox update <version>" ;;
     esac
 
     local pin_file="$HOME/.claudebox/claude-code-version"
