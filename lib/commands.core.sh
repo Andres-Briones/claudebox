@@ -134,100 +134,68 @@ _cmd_shell() {
 }
 
 _cmd_update() {
-    # Handle update all specially
+    # "update all" used to download the single-file launcher from upstream
+    # RchGrav/claudebox, overwriting this fork's installed script. The fork
+    # is a git checkout — update it with git instead.
     if [[ "${1:-}" == "all" ]]; then
-        info "Updating all components..."
-        echo
-        
-        # Update claudebox script
-        info "Updating claudebox script..."
-        if command -v curl >/dev/null 2>&1; then
-            curl -fsSL https://raw.githubusercontent.com/RchGrav/claudebox/main/claudebox -o /tmp/claudebox.new
-        elif command -v wget >/dev/null 2>&1; then
-            wget -qO /tmp/claudebox.new https://raw.githubusercontent.com/RchGrav/claudebox/main/claudebox
-        else
-            error "Neither curl nor wget found"
-        fi
-        
-        if [[ -f /tmp/claudebox.new ]]; then
-            # Find the installed claudebox (not the source)
-            local installed_path=$(which claudebox 2>/dev/null || echo "/usr/local/bin/claudebox")
-            
-            # If it's a symlink, replace it with the actual file first
-            if [[ -L "$installed_path" ]]; then
-                info "Converting symlink to real file..."
-                local source_file=$(readlink -f "$installed_path")
-                if [[ -w "$(dirname "$installed_path")" ]]; then
-                    cp "$source_file" "$installed_path.tmp"
-                    mv "$installed_path.tmp" "$installed_path"
-                    chmod +x "$installed_path"
-                else
-                    sudo cp "$source_file" "$installed_path.tmp"
-                    sudo mv "$installed_path.tmp" "$installed_path"
-                    sudo chmod +x "$installed_path"
-                fi
-            fi
-            
-            # Compare hashes of the INSTALLED file
-            current_hash=$(crc32_file "$installed_path" || echo "none")
-            new_hash=$(crc32_file /tmp/claudebox.new)
-            
-            if [[ "$current_hash" != "$new_hash" ]]; then
-                info "New version available, updating..."
-                
-                # Backup current installed version
-                local backups_dir="$HOME/.claudebox/backups"
-                mkdir -p "$backups_dir"
-                local timestamp=$(date +%s)
-                cp "$installed_path" "$backups_dir/$timestamp"
-                info "Backed up current version to $backups_dir/$timestamp"
-                
-                # Update the INSTALLED file
-                if [[ -w "$installed_path" ]] || [[ -w "$(dirname "$installed_path")" ]]; then
-                    cp /tmp/claudebox.new "$installed_path"
-                    chmod +x "$installed_path"
-                else
-                    sudo cp /tmp/claudebox.new "$installed_path"
-                    sudo chmod +x "$installed_path"
-                fi
-                success "✓ Claudebox script updated at $installed_path"
-            else
-                success "✓ Claudebox script already up to date"
-            fi
-            rm -f /tmp/claudebox.new
-        fi
-        echo
-        
-        # Update commands
-        info "Updating commands..."
-        local commands_dir="$HOME/.claudebox/commands"
-        mkdir -p "$commands_dir"
-        
-        for cmd in taskengine devops; do
-            echo -n "  Updating $cmd.md... "
-            if command -v curl >/dev/null 2>&1; then
-                curl -fsSL "https://raw.githubusercontent.com/RchGrav/claudebox/main/commands/$cmd.md" -o "$commands_dir/$cmd.md"
-            else
-                wget -qO "$commands_dir/$cmd.md" "https://raw.githubusercontent.com/RchGrav/claudebox/main/commands/$cmd.md"
-            fi
-            echo "✓"
-        done
-        echo
-        
-        # Now update Claude
-        info "Updating Claude..."
-        shift # Remove "update"
-        shift # Remove "all"
-        set -- "update" "$@" # Put back just "update"
+        warn "'update all' is disabled in this fork: it would overwrite the launcher with upstream's script."
+        info "Update the launcher with: git -C $SCRIPT_DIR pull"
+        shift
     fi
-    
-    # Check if image exists first
+
+    # The project image must exist — the update is applied by rebuilding it.
     if ! docker image inspect "$IMAGE_NAME" >/dev/null 2>&1; then
         error "No Docker image found for this project folder: $PROJECT_DIR\nRun 'claudebox' first to build the image, or cd to your project directory."
     fi
-    
-    # Continue with normal update flow
-    _cmd_special "update" "$@"
+
+    # Updating inside a container cannot stick: containers are ephemeral and
+    # Claude lives on image filesystem (~/.nvm), so anything installed there
+    # dies with the slot. The only state that persists is the image itself —
+    # so pin the target version and rebuild. The pin layer sits above the
+    # profile layers in Dockerfile.project, keeping the rebuild cheap.
+    local target_version="${1:-}"
+    if [[ -z "$target_version" ]]; then
+        local registry_url="https://registry.npmjs.org/@anthropic-ai/claude-code/latest"
+        local registry_json=""
+        if command -v curl >/dev/null 2>&1; then
+            registry_json=$(curl -fsSL "$registry_url" 2>/dev/null) || true
+        elif command -v wget >/dev/null 2>&1; then
+            registry_json=$(wget -qO- "$registry_url" 2>/dev/null) || true
+        else
+            error "Neither curl nor wget found"
+        fi
+        if [[ -n "$registry_json" ]]; then
+            target_version=$(printf '%s' "$registry_json" \
+                | grep -o '"version"[[:space:]]*:[[:space:]]*"[^"]*"' \
+                | head -n 1 \
+                | sed 's/.*"\([^"]*\)"$/\1/')
+        fi
+    fi
+
+    case "$target_version" in
+        [0-9]*.[0-9]*.[0-9]*) ;;
+        *) error "Could not resolve a Claude Code version (got '${target_version:-nothing}').\nCheck access to registry.npmjs.org or pass one explicitly: claudebox update <version>" ;;
+    esac
+
+    local pin_file="$HOME/.claudebox/claude-code-version"
+    local previous_pin=""
+    if [[ -f "$pin_file" ]]; then
+        previous_pin=$(head -n 1 "$pin_file")
+    fi
+
+    printf '%s\n' "$target_version" > "$pin_file"
+    if [[ "$target_version" == "$previous_pin" ]]; then
+        info "Claude Code already pinned at $target_version — rebuilding so the image matches"
+    else
+        info "Pinning Claude Code $target_version"
+    fi
+
+    # Rebuild this project's image now. Other projects pick the pin up on
+    # their next launch — the pin file is part of the layer checksums.
+    build_docker_image
+
+    success "✓ $IMAGE_NAME now carries Claude Code $target_version (other projects update on their next launch)"
+    exit 0
 }
 
 export -f _cmd_help _cmd_shell _cmd_update

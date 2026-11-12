@@ -165,11 +165,25 @@ calculate_docker_layer_checksums() {
             echo "[DEBUG] Profiles checksum: $profiles_checksum" >&2
         fi
     fi
-    
+
+    # Layer 4: Claude Code version pin (written by `claudebox update`).
+    # Including it here makes every project image rebuild on its next
+    # launch after an update, picking up the pin via CLAUDE_CODE_VERSION
+    # in Dockerfile.project.
+    local claudepin_checksum=""
+    local pin_file="$HOME/.claudebox/claude-code-version"
+    if [[ -f "$pin_file" ]]; then
+        claudepin_checksum=$(md5_file "$pin_file")
+        if [[ "$VERBOSE" == "true" ]]; then
+            echo "[DEBUG] Claude pin checksum: $claudepin_checksum" >&2
+        fi
+    fi
+
     # Return layer checksums (first 8 chars of MD5 hex)
     echo "dockerfile:${dockerfile_checksum:0:8}"
     echo "scripts:${scripts_checksum:0:8}"
     echo "profiles:${profiles_checksum:0:8}"
+    echo "claudepin:${claudepin_checksum:0:8}"
 }
 
 # Check if Docker image needs rebuild and which layers changed

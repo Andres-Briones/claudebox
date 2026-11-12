@@ -741,8 +741,8 @@ _cmd_special() {
     local cmd="$1"
     shift
     
-    # Check if image exists first (for non-update commands)
-    if [[ "$cmd" != "update" ]] && ! docker image inspect "$IMAGE_NAME" >/dev/null 2>&1; then
+    # Check if image exists first
+    if ! docker image inspect "$IMAGE_NAME" >/dev/null 2>&1; then
         error "No Docker image found for this project folder: $PROJECT_DIR\nRun 'claudebox' first to build the image, or cd to your project directory."
     fi
     
@@ -754,13 +754,6 @@ _cmd_special() {
     run_claudebox_container "$temp_container" "detached" "$cmd" "$@" >/dev/null
     
     # Show progress while waiting
-    if [[ "$cmd" == "update" ]]; then
-        # Show hint during update
-        echo
-        cecho "Hint:" "$YELLOW"
-        echo "  claudebox update all            # Pull the latest claudebox features!"
-        echo
-    fi
     fillbar
     
     # Wait for container to finish
@@ -775,28 +768,6 @@ _cmd_special() {
     docker commit "$temp_container" "$IMAGE_NAME" >/dev/null
     docker stop "$temp_container" >/dev/null 2>&1 || true
     docker rm "$temp_container" >/dev/null 2>&1 || true
-
-    # For update: probe the committed image for the resulting version and
-    # record it as a pin. Project images build FROM a shared base whose
-    # baked-in Claude is frozen at base-build time — without the pin, any
-    # rebuild silently reverts the update (see CLAUDE_CODE_VERSION in
-    # build/Dockerfile.project).
-    if [[ "$cmd" == "update" ]]; then
-        local version_output=""
-        version_output=$(docker run --rm -u "$DOCKER_USER" -e HOME="/home/$DOCKER_USER" \
-            --entrypoint bash "$IMAGE_NAME" -c \
-            'source "$NVM_DIR/nvm.sh" >/dev/null 2>&1 && nvm use default >/dev/null 2>&1 && claude --version' \
-            2>/dev/null) || true
-        if [[ -n "$version_output" ]]; then
-            printf '%s\n' "$version_output"
-            local claude_version="${version_output%% *}"
-            case "$claude_version" in
-                [0-9]*)
-                    printf '%s\n' "$claude_version" > "$HOME/.claudebox/claude-code-version"
-                    ;;
-            esac
-        fi
-    fi
 
     exit 0
 }
