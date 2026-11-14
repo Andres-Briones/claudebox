@@ -61,6 +61,7 @@ This fork has diverged significantly from [upstream](https://github.com/RchGrav/
 - **LaTeX** — TeX Live, Emacs, feynmp-auto for Feynman diagrams (slimmed down to save ~1.5 GB)
 - **Wolfram** — Wolfram Engine 14 with persistent licensing across containers
 - **wolfram-cloud** — lightweight variant using `wolframclient` against Wolfram Cloud
+- **poppler** — PDF command-line utilities (`pdftotext`, `pdftoppm`, `pdfimages`, `pdfinfo`)
 
 **Upstream bug fixes (not yet in [RchGrav/claudebox](https://github.com/RchGrav/claudebox)):**
 - Missing `||` operator in Dockerfile placeholder guard (`main.sh`) — unreplaced `{{LABELS}}` placeholders were never detected

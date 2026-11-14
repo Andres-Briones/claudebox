@@ -374,6 +374,18 @@ _describe_profile() {
             echo
             ;;
             
+        poppler)
+            echo "**Poppler PDF Utilities**"
+            echo
+            echo "Command-line PDF tools (poppler-utils):"
+            echo "- pdftotext - Extract text from PDFs"
+            echo "- pdftoppm / pdftocairo - Render pages to images"
+            echo "- pdfimages - Extract embedded images"
+            echo "- pdfinfo - Show PDF metadata"
+            echo "- pdfunite / pdfseparate - Merge and split PDFs"
+            echo
+            ;;
+
         ml)
             echo "**Machine Learning Environment**"
             echo

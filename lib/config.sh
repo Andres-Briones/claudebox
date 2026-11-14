@@ -76,6 +76,7 @@ get_profile_packages() {
         wolfram) echo "" ;;  # Custom install via heredoc
         wolfram-cloud) echo "" ;;  # Standalone wolframscript
         gsd) echo "" ;;  # get-shit-done-cc installed via npm in get_profile_gsd
+        poppler) echo "poppler-utils" ;;
         bun) echo "" ;;
         *) echo "" ;;
     esac
@@ -109,12 +110,13 @@ get_profile_description() {
         wolfram) echo "Wolfram Engine 14 (Mathematica kernel, wolframscript)" ;;
         wolfram-cloud) echo "Wolfram Cloud (Python wolframclient, cloud computation, no local engine)" ;;
         gsd) echo "GSD (Get Shit Done) workflow CLI - get-shit-done-cc (provides gsd-sdk with full query subcommand); markdown payload installed separately via scripts/gsd-install.sh" ;;
+        poppler) echo "Poppler PDF Utilities (pdftotext, pdftoppm, pdfimages, pdfinfo)" ;;
         *) echo "" ;;
     esac
 }
 
 get_all_profile_names() {
-    echo "core build-tools shell networking c openwrt rust python go flutter javascript bun java ruby php database devops web embedded datascience security ml latex wolfram wolfram-cloud gsd"
+    echo "core build-tools shell networking c openwrt rust python go flutter javascript bun java ruby php database devops web embedded datascience security ml latex wolfram wolfram-cloud gsd poppler"
 }
 
 profile_exists() {
@@ -453,6 +455,13 @@ get_profile_datascience() {
 
 get_profile_security() {
     local packages=$(get_profile_packages "security")
+    if [[ -n "$packages" ]]; then
+        echo "RUN apt-get update && apt-get install -y $packages && apt-get clean"
+    fi
+}
+
+get_profile_poppler() {
+    local packages=$(get_profile_packages "poppler")
     if [[ -n "$packages" ]]; then
         echo "RUN apt-get update && apt-get install -y $packages && apt-get clean"
     fi
