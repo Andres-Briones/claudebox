@@ -118,7 +118,7 @@ run_test "Dockerfile generation pattern" test_dockerfile_pattern
 # Test 8: Empty profile handling
 test_empty_profile() {
     eval "$PROFILE_FUNCS"
-    local packages=$(get_profile_packages "python")
+    local packages=$(get_profile_packages "rust")
     [[ -z "$packages" ]]
 }
 run_test "Empty profile handling" test_empty_profile
