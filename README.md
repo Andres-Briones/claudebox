@@ -62,6 +62,7 @@ This fork has diverged significantly from [upstream](https://github.com/RchGrav/
 - **Wolfram** — Wolfram Engine 14 with persistent licensing across containers
 - **wolfram-cloud** — lightweight variant using `wolframclient` against Wolfram Cloud
 - **poppler** — PDF command-line utilities (`pdftotext`, `pdftoppm`, `pdfimages`, `pdfinfo`)
+- **chromium** — headless Chromium plus Liberation and Noto emoji fonts, for screenshots and DevTools-protocol scripting
 
 **Upstream bug fixes (not yet in [RchGrav/claudebox](https://github.com/RchGrav/claudebox)):**
 - Missing `||` operator in Dockerfile placeholder guard (`main.sh`) — unreplaced `{{LABELS}}` placeholders were never detected

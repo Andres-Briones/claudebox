@@ -386,6 +386,18 @@ _describe_profile() {
             echo
             ;;
 
+        chromium)
+            echo "**Headless Chromium**"
+            echo
+            echo "- chromium - Browser at /usr/bin/chromium, driven headless (screenshots, PDF, DevTools protocol)"
+            echo "- fonts-liberation, fonts-noto-color-emoji - Fonts for text and emoji rendering"
+            echo
+            echo "Inside the container the sandbox must be disabled:"
+            echo "\`chromium --headless=new --no-sandbox --disable-gpu --screenshot=out.png --window-size=1280,800 <url>\`"
+            echo "A D-Bus error on startup is harmless."
+            echo
+            ;;
+
         ml)
             echo "**Machine Learning Environment**"
             echo

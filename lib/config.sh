@@ -77,6 +77,7 @@ get_profile_packages() {
         wolfram-cloud) echo "" ;;  # Standalone wolframscript
         gsd) echo "" ;;  # get-shit-done-cc installed via npm in get_profile_gsd
         poppler) echo "poppler-utils" ;;
+        chromium) echo "chromium fonts-liberation fonts-noto-color-emoji" ;;
         bun) echo "" ;;
         *) echo "" ;;
     esac
@@ -111,12 +112,13 @@ get_profile_description() {
         wolfram-cloud) echo "Wolfram Cloud (Python wolframclient, cloud computation, no local engine)" ;;
         gsd) echo "GSD (Get Shit Done) workflow CLI - get-shit-done-cc (provides gsd-sdk with full query subcommand); markdown payload installed separately via scripts/gsd-install.sh" ;;
         poppler) echo "Poppler PDF Utilities (pdftotext, pdftoppm, pdfimages, pdfinfo)" ;;
+        chromium) echo "Headless Chromium (screenshots, DevTools protocol; run with --headless=new --no-sandbox)" ;;
         *) echo "" ;;
     esac
 }
 
 get_all_profile_names() {
-    echo "core build-tools shell networking c openwrt rust python go flutter javascript bun java ruby php database devops web embedded datascience security ml latex wolfram wolfram-cloud gsd poppler"
+    echo "core build-tools shell networking c openwrt rust python go flutter javascript bun java ruby php database devops web embedded datascience security ml latex wolfram wolfram-cloud gsd poppler chromium"
 }
 
 profile_exists() {
@@ -462,6 +464,13 @@ get_profile_security() {
 
 get_profile_poppler() {
     local packages=$(get_profile_packages "poppler")
+    if [[ -n "$packages" ]]; then
+        echo "RUN apt-get update && apt-get install -y $packages && apt-get clean"
+    fi
+}
+
+get_profile_chromium() {
+    local packages=$(get_profile_packages "chromium")
     if [[ -n "$packages" ]]; then
         echo "RUN apt-get update && apt-get install -y $packages && apt-get clean"
     fi
