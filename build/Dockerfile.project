@@ -7,6 +7,11 @@ FROM {{BASE_IMAGE}}
 # Switch to root for installations
 USER root
 
+# Voice input records through sox. It lives here rather than in the base
+# Dockerfile because claudebox-core is only built when missing, so base
+# changes never reach existing installs.
+RUN apt-get update && apt-get install -y --no-install-recommends sox libsox-fmt-pulse && apt-get clean
+
 {{PROFILE_INSTALLATIONS}}
 
 {{LABELS}}

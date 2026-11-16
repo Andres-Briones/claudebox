@@ -123,10 +123,17 @@ calculate_docker_layer_checksums() {
         echo "[DEBUG] calculate_docker_layer_checksums: SCRIPT_PATH=$SCRIPT_PATH, root_dir=$root_dir" >&2
     fi
     
-    # Layer 1: Base Dockerfile (rarely changes)
+    # Layer 1: Dockerfile templates (rarely change). Dockerfile.project is
+    # included because it is what every project image is actually built from.
     local dockerfile_checksum=""
-    if [[ -f "$root_dir/build/Dockerfile" ]]; then
-        dockerfile_checksum=$(md5_file "$root_dir/build/Dockerfile")
+    local dockerfile_combined=""
+    for file in "$root_dir/build/Dockerfile" "$root_dir/build/Dockerfile.project"; do
+        if [[ -f "$file" ]]; then
+            dockerfile_combined="${dockerfile_combined}$(md5_file "$file")"
+        fi
+    done
+    if [[ -n "$dockerfile_combined" ]]; then
+        dockerfile_checksum=$(md5_string "$dockerfile_combined")
         if [[ "$VERBOSE" == "true" ]]; then
             echo "[DEBUG] Dockerfile checksum: $dockerfile_checksum" >&2
         fi
