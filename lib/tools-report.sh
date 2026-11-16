@@ -90,6 +90,7 @@ generate_tools_report() {
         echo "- **jq** - JSON processor for parsing and manipulating JSON"
         echo "- **tmux** - Terminal multiplexer for managing sessions"
         echo "- **nano/vim** - Text editors"
+        echo "- **sox** - Audio recording (rec), used by Claude Code voice input"
         echo
         echo "### Claude CLI"
         echo "- **claude** - Anthropic's Claude CLI (pre-configured)"

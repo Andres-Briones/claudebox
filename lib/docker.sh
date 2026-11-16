@@ -609,6 +609,29 @@ run_claudebox_container() {
         fi
     fi
 
+    # Expose the host's PulseAudio/PipeWire socket so voice input (sox `rec`) can
+    # reach the microphone. The socket file is mounted rather than its directory:
+    # the directory is 0700 and unreadable to the container user under rootless
+    # docker, while the socket itself is world-connectable.
+    local pulse_socket="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/pulse/native"
+    if [[ -S "$pulse_socket" ]]; then
+        docker_args+=(
+            -v "$pulse_socket":/tmp/pulse-native
+            -e "PULSE_SERVER=unix:/tmp/pulse-native"
+            -e "AUDIODRIVER=pulseaudio"
+        )
+        local pulse_cookie="${XDG_CONFIG_HOME:-$HOME/.config}/pulse/cookie"
+        if [[ -f "$pulse_cookie" ]]; then
+            docker_args+=(
+                -v "$pulse_cookie":/tmp/pulse-cookie:ro
+                -e "PULSE_COOKIE=/tmp/pulse-cookie"
+            )
+        fi
+        if [[ "$VERBOSE" == "true" ]]; then
+            printf '[DEBUG] Mounting audio socket from %s\n' "$pulse_socket" >&2
+        fi
+    fi
+
     # Load custom environment file if it exists (~/.claudebox/env)
     local env_file="${CLAUDEBOX_HOME}/env"
     if [[ -f "$env_file" ]]; then
