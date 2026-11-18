@@ -15,7 +15,7 @@ readonly LINK_TARGET="$HOME/.local/bin/claudebox"
 export CLAUDEBOX_HOME="${HOME}/.claudebox"
 
 # Version constants
-readonly NODE_VERSION="--lts"
+readonly NODE_VERSION="26"
 readonly DELTA_VERSION="0.17.0"
 
 # Script path resolution - moved to main claudebox.sh since it needs BASH_SOURCE
