@@ -63,6 +63,7 @@ This fork has diverged significantly from [upstream](https://github.com/RchGrav/
 - **wolfram-cloud** — lightweight variant using `wolframclient` against Wolfram Cloud
 - **poppler** — PDF command-line utilities (`pdftotext`, `pdftoppm`, `pdfimages`, `pdfinfo`)
 - **chromium** — headless Chromium plus Liberation and Noto emoji fonts, for screenshots and DevTools-protocol scripting
+- **php-mariadb** — PHP + Composer plus a MariaDB server that runs inside the slot (no Docker-in-Docker); `mariadb-dev start|stop|status` manages it, data persists per slot under `~/.config/mariadb`
 
 **Upstream bug fixes (not yet in [RchGrav/claudebox](https://github.com/RchGrav/claudebox)):**
 - Missing `||` operator in Dockerfile placeholder guard (`main.sh`) — unreplaced `{{LABELS}}` placeholders were never detected

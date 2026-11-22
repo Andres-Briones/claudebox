@@ -78,6 +78,7 @@ get_profile_packages() {
         gsd) echo "" ;;  # get-shit-done-cc installed via npm in get_profile_gsd
         poppler) echo "poppler-utils" ;;
         chromium) echo "chromium fonts-liberation fonts-noto-color-emoji" ;;
+        php-mariadb) echo "$(get_profile_packages php) mariadb-server mariadb-client" ;;
         bun) echo "" ;;
         *) echo "" ;;
     esac
@@ -113,12 +114,13 @@ get_profile_description() {
         gsd) echo "GSD (Get Shit Done) workflow CLI - get-shit-done-cc (provides gsd-sdk with full query subcommand); markdown payload installed separately via scripts/gsd-install.sh" ;;
         poppler) echo "Poppler PDF Utilities (pdftotext, pdftoppm, pdfimages, pdfinfo)" ;;
         chromium) echo "Headless Chromium (screenshots, DevTools protocol; run with --headless=new --no-sandbox)" ;;
+        php-mariadb) echo "PHP + MariaDB web stack (PHP, Composer, in-slot MariaDB server via mariadb-dev)" ;;
         *) echo "" ;;
     esac
 }
 
 get_all_profile_names() {
-    echo "core build-tools shell networking c openwrt rust python go flutter javascript bun java ruby php database devops web embedded datascience security ml latex wolfram wolfram-cloud gsd poppler chromium"
+    echo "core build-tools shell networking c openwrt rust python go flutter javascript bun java ruby php database devops web embedded datascience security ml latex wolfram wolfram-cloud gsd poppler chromium php-mariadb"
 }
 
 profile_exists() {
@@ -474,6 +476,49 @@ get_profile_chromium() {
     if [[ -n "$packages" ]]; then
         echo "RUN apt-get update && apt-get install -y $packages && apt-get clean"
     fi
+}
+
+get_profile_php_mariadb() {
+    # No systemd in a slot, so the server is started on demand by the
+    # mariadb-dev helper, as the unprivileged user. The data dir lives under
+    # ~/.config because that is a per-slot host mount: databases survive slot
+    # restarts, and two slots never share one data dir. The package's own
+    # /var/lib/mysql is dropped since it is never used.
+    #
+    # The snippet passes through `awk -v` in main.sh, which interprets
+    # backslash escapes (a printf format newline escape becomes a literal newline and breaks the RUN): keep it free of backslashes other than line
+    # continuations.
+    echo "RUN apt-get update && apt-get install -y $(get_profile_packages "php-mariadb") && apt-get clean && rm -rf /var/lib/mysql/*"
+    cat << 'EOF'
+RUN install -d -o claude -g claude /run/mysqld && \
+    for l in '[client]' 'user = root'; do echo "$l"; done > /etc/mysql/mariadb.conf.d/99-claudebox.cnf && \
+    for l in \
+        '#!/bin/sh' \
+        '# Start/stop the per-slot MariaDB dev server (no systemd in a slot).' \
+        'set -eu' \
+        'BASE="$HOME/.config/mariadb"' \
+        'DATADIR="$BASE/data"' \
+        'case "${1:-}" in' \
+        '  start)' \
+        '    if mariadb-admin ping >/dev/null 2>&1; then echo "MariaDB already running"; exit 0; fi' \
+        '    if [ ! -d "$DATADIR/mysql" ]; then' \
+        '      mkdir -p "$DATADIR"' \
+        '      mariadb-install-db --datadir="$DATADIR" --auth-root-authentication-method=normal --skip-test-db >"$BASE/install.log" 2>&1 || { cat "$BASE/install.log" >&2; exit 1; }' \
+        '    fi' \
+        '    nohup mariadbd --datadir="$DATADIR" >"$BASE/error.log" 2>&1 &' \
+        '    i=0' \
+        '    while [ "$i" -lt 30 ]; do' \
+        '      if mariadb-admin ping >/dev/null 2>&1; then echo "MariaDB running (root, empty password, 127.0.0.1:3306)"; exit 0; fi' \
+        '      i=$((i + 1)); sleep 1' \
+        '    done' \
+        '    echo "MariaDB failed to start, see $BASE/error.log" >&2; exit 1 ;;' \
+        '  stop) mariadb-admin shutdown ;;' \
+        '  status) mariadb-admin ping ;;' \
+        '  *) echo "usage: mariadb-dev start|stop|status" >&2; exit 2 ;;' \
+        'esac'; do echo "$l"; done \
+        > /usr/local/bin/mariadb-dev && \
+    chmod +x /usr/local/bin/mariadb-dev
+EOF
 }
 
 get_profile_ml() {

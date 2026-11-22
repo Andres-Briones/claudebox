@@ -399,6 +399,22 @@ _describe_profile() {
             echo
             ;;
 
+        php-mariadb)
+            echo "**PHP + MariaDB Web Stack**"
+            echo
+            echo "- PHP (CLI + FPM), Composer, extensions: mysql, pgsql, sqlite3, curl, gd, mbstring, xml, zip"
+            echo "- MariaDB server + client, running inside the slot (no systemd)"
+            echo
+            echo "The database is not started automatically:"
+            echo "- \`mariadb-dev start\` - initialise on first run, then start the server"
+            echo "- \`mariadb-dev stop\` / \`mariadb-dev status\`"
+            echo
+            echo "Connect as \`root\` with an empty password, on 127.0.0.1:3306 or the default socket"
+            echo "(plain \`mariadb\` works). Data persists per slot in ~/.config/mariadb/data."
+            echo "Dev server for the app: \`php -S 127.0.0.1:8000 -t public\`"
+            echo
+            ;;
+
         ml)
             echo "**Machine Learning Environment**"
             echo
