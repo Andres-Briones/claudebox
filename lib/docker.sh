@@ -651,7 +651,13 @@ run_claudebox_container() {
         slot_index=$(get_slot_index "$slot_name" "$PROJECT_PARENT_DIR" 2>/dev/null || echo "1")
     fi
     
+    local publish_spec
+    for publish_spec in ${CLI_PUBLISH_PORTS:-}; do
+        docker_args+=(-p "$publish_spec")
+    done
+
     docker_args+=(
+        -e "CLAUDEBOX_PUBLISHED_PORTS=$(published_container_ports)"
         -e "NODE_ENV=${NODE_ENV:-production}"
         -e "ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}"
         -e "CLAUDEBOX_PROJECT_NAME=$project_name"

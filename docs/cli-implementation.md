@@ -75,6 +75,7 @@ done
 | `tmux` | Host-only | CLI parser | Sets CLAUDEBOX_WRAP_TMUX=true | No |
 | `--enable-sudo` | Control | Entrypoint | Enables sudo in container | Yes |
 | `--disable-firewall` | Control | Entrypoint | Disables firewall | Yes |
+| `--port <spec>` | Host-only (takes a value) | CLI parser → `docker run -p` | Publishes a port on 127.0.0.1 unless spec starts with an IP; repeatable; opens that port in the slot firewall | No |
 | `shell` | Script command | Host | Launches interactive shell | No |
 | `create` | Script command | Host | Creates new slot | No |
 | `slot`/`slots` | Script command | Host | Manages slots | No |

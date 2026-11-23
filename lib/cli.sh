@@ -27,12 +27,30 @@ parse_cli_args() {
     control_flags=()
     script_command=""
     pass_through=()
-    
+    publish_ports=""
+
     # Single parsing loop - each arg goes into exactly ONE bucket
     local found_script_command=false
-    
-    for arg in "${all_args[@]}"; do
-        if [[ " ${HOST_ONLY_FLAGS[*]} " == *" $arg "* ]]; then
+    local nargs=${#all_args[@]}
+    local i=0
+    local arg spec
+
+    while [[ $i -lt $nargs ]]; do
+        arg="${all_args[$i]}"
+        i=$((i + 1))
+        if [[ "$arg" == "--port" ]] || [[ "$arg" == --port=* ]]; then
+            # Host-side flag with a value: becomes `docker run -p`, never reaches the container
+            if [[ "$arg" == "--port" ]]; then
+                spec="${all_args[$i]:-}"
+                i=$((i + 1))
+            else
+                spec="${arg#--port=}"
+            fi
+            if ! spec=$(normalize_port_spec "$spec"); then
+                return 1
+            fi
+            publish_ports="${publish_ports:+$publish_ports }$spec"
+        elif [[ " ${HOST_ONLY_FLAGS[*]} " == *" $arg "* ]]; then
             # Bucket 1: Host-only flags
             host_flags+=("$arg")
         elif [[ " ${CONTROL_FLAGS[*]} " == *" $arg "* ]]; then
@@ -53,6 +71,52 @@ parse_cli_args() {
     export CLI_CONTROL_FLAGS=("${control_flags[@]}")
     export CLI_SCRIPT_COMMAND="$script_command"
     export CLI_PASS_THROUGH=("${pass_through[@]}")
+    export CLI_PUBLISH_PORTS="$publish_ports"
+}
+
+# normalize_port_spec - Turn a --port value into a `docker run -p` spec.
+# Accepts PORT, HOST_PORT:CONTAINER_PORT, or IP:HOST_PORT:CONTAINER_PORT.
+# Without an explicit IP the port binds to 127.0.0.1 only: Docker's default of
+# 0.0.0.0 would expose the slot to the LAN and bypass host firewalls like ufw.
+normalize_port_spec() {
+    local spec="$1"
+    local ip="127.0.0.1"
+    local host_port container_port rest
+    case "$spec" in
+        *:*:*)
+            ip="${spec%%:*}"
+            rest="${spec#*:}"
+            host_port="${rest%%:*}"
+            container_port="${rest#*:}"
+            ;;
+        *:*)
+            host_port="${spec%%:*}"
+            container_port="${spec#*:}"
+            ;;
+        *)
+            host_port="$spec"
+            container_port="$spec"
+            ;;
+    esac
+    if ! _is_valid_port "$host_port" || ! _is_valid_port "$container_port" || [[ -z "$ip" ]] || [[ "$ip" == *:* ]]; then
+        printf "claudebox: invalid --port value '%s' (expected PORT, HOST:CONTAINER or IP:HOST:CONTAINER)\n" "$spec" >&2
+        return 1
+    fi
+    printf '%s:%s:%s\n' "$ip" "$host_port" "$container_port"
+}
+
+_is_valid_port() {
+    [[ "$1" =~ ^[0-9]+$ ]] && [[ $1 -ge 1 ]] && [[ $1 -le 65535 ]]
+}
+
+# published_container_ports - Container-side ports of CLI_PUBLISH_PORTS, space-separated
+published_container_ports() {
+    local spec
+    local out=""
+    for spec in ${CLI_PUBLISH_PORTS:-}; do
+        out="${out:+$out }${spec##*:}"
+    done
+    printf '%s' "$out"
 }
 
 # Process host-only flags and set environment variables
@@ -130,8 +194,9 @@ debug_parsed_args() {
         echo "[DEBUG]   Control flags: ${CLI_CONTROL_FLAGS[*]}" >&2
         echo "[DEBUG]   Script command: ${CLI_SCRIPT_COMMAND}" >&2
         echo "[DEBUG]   Pass-through: ${CLI_PASS_THROUGH[*]}" >&2
+        echo "[DEBUG]   Published ports: ${CLI_PUBLISH_PORTS:-}" >&2
     fi
 }
 
 # Export all functions
-export -f parse_cli_args process_host_flags get_command_requirements requires_docker_image requires_slot debug_parsed_args
+export -f parse_cli_args normalize_port_spec _is_valid_port published_container_ports process_host_flags get_command_requirements requires_docker_image requires_slot debug_parsed_args

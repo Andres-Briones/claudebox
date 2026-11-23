@@ -8,6 +8,11 @@
 _cmd_save() {
     local defaults_file="${CLAUDEBOX_HOME}/default-flags"
 
+    # A saved port would be published by every slot, so the second one would fail to start
+    if [[ -n "${CLI_PUBLISH_PORTS:-}" ]]; then
+        error "--port can't be saved as a default; pass it per launch"
+    fi
+
     if [[ $# -eq 0 ]]; then
         if [[ -f "$defaults_file" ]]; then
             rm -f "$defaults_file"

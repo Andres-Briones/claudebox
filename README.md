@@ -457,6 +457,11 @@ claudebox --enable-sudo
 # Disable network firewall (allows all network access)
 claudebox --disable-firewall
 
+# Publish a port so a web app in the slot is reachable at http://localhost:8080
+# (binds to 127.0.0.1 only; repeatable; --port 3000:8080 maps host 3000 to slot 8080;
+#  prefix an IP, e.g. 0.0.0.0:8080:8080, to expose it beyond localhost)
+claudebox --port 8080
+
 # Skip permission checks
 claudebox --dangerously-skip-permissions
 ```

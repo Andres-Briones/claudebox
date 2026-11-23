@@ -17,6 +17,12 @@ iptables -A OUTPUT -s 127.0.0.0/8 -d 127.0.0.0/8 -j ACCEPT
 iptables -A INPUT -s 127.0.0.0/8 -d 127.0.0.0/8 -j ACCEPT
 iptables -A OUTPUT -m state --state ESTABLISHED,RELATED -j ACCEPT
 iptables -A INPUT -m state --state ESTABLISHED,RELATED -j ACCEPT
+# Inbound stays closed except for ports the user published with `claudebox --port`
+for port in ${CLAUDEBOX_PUBLISHED_PORTS:-}; do
+    if [[ "$port" =~ ^[0-9]+$ ]]; then
+        iptables -A INPUT -p tcp --dport "$port" -j ACCEPT
+    fi
+done
 # Default allowed domains
 DEFAULT_DOMAINS="api.anthropic.com console.anthropic.com statsig.anthropic.com sentry.io"
 
