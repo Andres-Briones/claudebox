@@ -22,30 +22,11 @@ plus any extra mounts.
 
 ### Serving web apps to the user
 
-The user's browser can only reach ports published when the slot started
-(`claudebox --port 8080`, or `--port 3000:8080` to map host 3000 to slot
-8080). Those ports are listed in `$CLAUDEBOX_PUBLISHED_PORTS`. They're bound
-to `127.0.0.1` on the host and are the only inbound ports the slot firewall
-allows.
-
-- **Listen on `0.0.0.0`.** Dev servers often default to `127.0.0.1`, which
-  can't be reached from outside the slot (`npm run dev -- --host 0.0.0.0`,
-  `flask run --host 0.0.0.0`, `uvicorn --host 0.0.0.0`). Use a port from
-  `$CLAUDEBOX_PUBLISHED_PORTS` and give the user the host-side URL.
-- **No published port?** Ports can't be added to a running slot. Tell the
-  user to relaunch with `claudebox --port <N>`, or for a one-off, to run a
-  relay on the host. The relay only works if the slot was started with
-  `--disable-firewall`; `hostname -I` gives the slot's IP:
-  `docker run --rm -p 127.0.0.1:<N>:<N> alpine/socat TCP-LISTEN:<N>,fork,reuseaddr TCP:<slot-ip>:<N>`
-- **Don't widen exposure on your own.** Don't suggest binding to `0.0.0.0`
-  on the host (LAN exposure, bypasses ufw), `--disable-firewall`, or tunnel
-  services (ngrok, cloudflared) without stating the risk and getting the
-  user's OK. Turn off debug consoles (e.g. Flask's debugger, which is remote
-  code execution) on anything the user will open.
-- **VMs:** `/dev/kvm` isn't passed in, so QEMU would run fully emulated and
-  be very slow. Prefer writing the VM config (Vagrantfile, cloud-init) for
-  the user to run on the host. If a VM must run in the slot, forward its
-  port to a published one (`-nic user,hostfwd=tcp::<N>-:80`).
+The user's browser only reaches ports published at slot start
+(`$CLAUDEBOX_PUBLISHED_PORTS`). Before starting a server the user will open,
+use the `serve-web-app` skill. Don't widen exposure on your own: no
+`0.0.0.0` bind on the host, `--disable-firewall`, or tunnel services (ngrok,
+cloudflared) without stating the risk and getting the user's OK.
 
 ### Rootless docker
 
@@ -138,26 +119,16 @@ so future sessions start faster. Complements auto-memory (which stores
     supporting files. Single-file `.md` skills are not recognized.
 - **SKILL.md format**: YAML frontmatter (`name`, `description`) followed by
   the body. Claude Code triggers a skill by matching its description against
-  the current task — make the description specific, not vague.
-
-  ```
-  ---
-  name: my-skill
-  description: When test passes locally but fails in CI, ...
-  ---
-
-  # body
-  ```
+  the current task — make the description specific ("When a test passes
+  locally but fails in CI, ..."), not vague.
 - **What to capture**: the approach, edge cases hit, domain knowledge
   discovered, the shape of the investigation. *Not* specific file paths or
   a play-by-play of tool calls — those rot fast.
 - **Edit in place, don't duplicate.** If an existing skill applies but is
   incomplete or wrong, fix it — don't write a near-duplicate.
 - **Delete skills that proved wrong.** A misleading skill is worse than none.
-- **Skills vs. auto-memory exclusions**: auto-memory forbids saving code
-  patterns / architecture (derivable from the repo). Skills are procedural
-  recipes ("how I investigated a flaky test"), not codebase facts —
-  different category, allowed.
+- **Skills vs. auto-memory**: memory excludes code patterns and architecture;
+  skills are procedural recipes, a different category, and are allowed.
 
 ## Scripts (reusable procedures)
 When a task is a repeatable procedure (install deps on a new slot, clean
@@ -179,12 +150,28 @@ re-typing prose every time.
 - **Pair with skills.** A skill says *when/why*; a script is *how*.
   Cross-reference them.
 
+## Delegating to agents
+A subagent re-reads its whole history at every step, so a long-running
+worker costs far more than several short ones. Keep workers short.
+
+- One worker = one result that fits a short session. Split by deliverable
+  or by batch, and run the pieces in parallel or in sequence from files.
+- Every brief names the result to produce (a file, a passing test), a stop
+  point ("when X exists and tests pass, stop") and a budget (about 60 tool
+  calls, then write a handoff file and report). It also says: no whole-file
+  dumps, no polling of background runs, no polishing rounds.
+- Continue from the handoff file with a fresh worker rather than resuming a
+  long one. Long computations run in the background from the main session.
+- Before launching, tell the user each job in one line with the result it
+  must produce. Afterwards, list every result against the user's goal and
+  say plainly what is still missing.
+- While workers write in a tree, commit only your own files by name.
+- For a new block of work in a very long session, suggest a fresh session
+  and have `.planning/STATE.md` ready for it.
+
 ## Plans & project status
-All project state lives under `/workspace/.planning/`. The naming aligns
-with the [GSD (Get Shit Done)](https://github.com/gsd-build/get-shit-done)
-workflow toolkit, so opting into GSD on a project shares the directory
-cleanly (GSD writes its own files at `.planning/` root; our subdirs live
-alongside without collision).
+All project state lives under `/workspace/.planning/` (shared cleanly with
+the GSD toolkit, which writes its own files at the `.planning/` root).
 
 - `/workspace/.planning/STATE.md` — project heartbeat (done / in-progress / blocked / next).
 - `/workspace/.planning/plans/<slug>.md` — plan for a non-trivial task; archive when done.
@@ -193,12 +180,13 @@ alongside without collision).
 - In-session todos → the built-in task tool (ephemeral, don't persist to disk).
 - Ephemeral project context (merge freezes, current blockers) →
   auto-memory `project` type.
-- Update STATE + the active plan at task close (see self-nudge).
+- Update STATE + the active plan at task close (see self-nudge). Write STATE
+  last, after every worker has finished and its work is committed, with
+  numbers read from the data at that moment. Never close a session on
+  "in progress" or "not committed".
 
-To migrate a workspace still using the older `STATUS.md` + `.agent/plans/`
-+ `.agent/decisions/` layout, invoke the `migrate-to-planning` skill —
-it dispatches the `planning-migrator` subagent which scans, reports, and
-executes the moves with `git mv` to preserve history.
+To migrate a workspace still on the older `STATUS.md` + `.agent/plans/` +
+`.agent/decisions/` layout, invoke the `migrate-to-planning` skill.
 
 ## Self-nudge at task close
 At the end of any non-trivial task, pause and ask: did this reveal something
