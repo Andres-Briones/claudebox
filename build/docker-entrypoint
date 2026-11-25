@@ -217,13 +217,11 @@ cd /home/DOCKERUSER
 # claude modes). Host ~/.claude is mounted read-only at /tmp/host-claude-home
 # by docker.sh.
 #
-# Two cases per top-level dir (e.g. skills/, agents/):
-#   - slot doesn't have the dir → symlink the whole host dir into the slot.
-#   - slot already has it (seed-populated by sync_claude_seed_files) → merge
-#     per-child. User wins on name collisions: replace the slot's seed copy
-#     with a symlink to the host child. This lets fork-shipped defaults
-#     coexist with user customs, with the user able to override defaults by
-#     using the same name.
+# Each host top-level dir (e.g. skills/, agents/) gets a real dir in the slot
+# with one symlink per host child. User wins on name collisions: a seed copy
+# (from sync_claude_seed_files) is replaced with a symlink to the host child.
+# This lets fork-shipped defaults coexist with user customs, with the user
+# able to override defaults by using the same name.
 # Stale host-symlinks (host source removed) are cleaned so the next seed
 # sync can re-populate the seed default.
 if [ -d "/tmp/host-claude-home" ]; then
@@ -252,27 +250,23 @@ if [ -d "/tmp/host-claude-home" ]; then
         host_src="/tmp/host-claude-home/$dir_name"
         target="/home/DOCKERUSER/.claude/$dir_name"
 
-        if [ ! -e "$target" ]; then
-            # Slot has nothing here — link the whole host dir.
-            runuser -u DOCKERUSER -- ln -s "$host_src" "$target"
-            if [ "${VERBOSE:-false}" = "true" ]; then
-                printf 'Linked host dir: %s\n' "$dir_name" >&2
-            fi
-            continue
-        fi
-
-        # If $target is already a top-level symlink to $host_src, a prior
-        # launch already linked the whole dir — idempotent, skip the merge.
-        # Without this guard, the per-child loop below would resolve through
-        # the symlink and try to rm files on the host's read-only bind mount.
+        # Earlier versions symlinked the whole host dir when the slot had
+        # none. The host mount is read-only, so the slot could not add its
+        # own entries, and sync_claude_seed_files skips symlinked dirs, so
+        # seed defaults added later never arrived. Always use a real dir and
+        # link host children into it below.
         if [ -L "$target" ]; then
             link_target=$(readlink "$target" 2>/dev/null || true)
             if [ "$link_target" = "$host_src" ]; then
-                continue
+                runuser -u DOCKERUSER -- rm -f "$target"
             fi
         fi
 
-        # Slot already has this dir as a real dir (from seed). Merge per-child.
+        if [ ! -e "$target" ]; then
+            runuser -u DOCKERUSER -- mkdir -p "$target"
+        fi
+
+        # Merge per-child.
         for child in "$host_src"/* "$host_src"/.*; do
             if [ ! -e "$child" ]; then
                 continue
