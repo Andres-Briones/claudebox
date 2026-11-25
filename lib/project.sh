@@ -118,7 +118,7 @@ init_slot_dir() {
     # Don't pre-create .claude.json - let Claude create it naturally
 }
 
-# Sync seed files (CLAUDE.md, settings.json, PR_TEMPLATE_REFERENCE.md) from
+# Sync seed files (CLAUDE.md, settings.json, skills, agents) from
 # source/claude/ into the slot's .claude/. A file is overwritten only when the
 # source is newer (mtime) or the slot copy is missing. Per-slot state created
 # by Claude (.credentials.json, projects/, .claude.json, history) is left

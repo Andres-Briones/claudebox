@@ -86,34 +86,26 @@ chmod across the userns boundary.
 
 ## Autonomous writes — the `.agent/` convention
 
-The harness prompts before any write to `.claude/` even in
-`--dangerously-skip-permissions` mode — a deliberate carve-out that protects
-the harness's own config dir from runaway agents. That's the right default,
-but it blocks autonomous self-improvement: every "save a skill" or "update
-the plan" cycle would block on a confirm.
-
-The workaround is a parallel `.agent/` directory of symlinks pointing into
-`.claude/`:
+The harness prompts before any write to `.claude/`, even in
+`--dangerously-skip-permissions` mode, which would block every "save a
+skill" cycle on a confirm. The workaround is a parallel `.agent/` directory
+of symlinks into `.claude/`:
 
 ```
 .agent/
 ├── agents -> ../.claude/agents
-├── decisions -> ../.claude/decisions
-├── plans -> ../.claude/plans
 ├── scripts -> ../.claude/scripts
 └── skills -> ../.claude/skills
 ```
 
 Permission matching uses the literal tool-call path (no symlink resolution),
-so writes via `.agent/...` skip the carve-out and run silently. Both paths
-refer to the same files; the harness still auto-discovers content under
-`.claude/`.
+so writes via `.agent/...` run without a prompt, and the harness still
+discovers the files under `.claude/`.
 
-**Convention used below:** when writing skills, scripts, or agent
-definitions, use `.agent/...` paths. Plans, decisions, and project state
-live at `.planning/` — outside `.claude/`, so no carve-out workaround is
-needed. Direct `.claude/...` edits remain appropriate for content that
-*should* be gated (settings, hooks).
+When writing skills, scripts, or agent definitions, use `.agent/...` paths.
+Plans, decisions, and project state live at `.planning/`, outside `.claude/`,
+so they need no workaround. Edit `.claude/...` directly only for content
+that should be gated (settings, hooks).
 
 If the symlinks aren't set up in your workspace yet, run once at the
 workspace root:
@@ -134,12 +126,14 @@ so future sessions start faster. Complements auto-memory (which stores
   *and* the approach would plausibly help in a future session. Skip for
   one-off debugging where the only takeaway is "read the code."
 - **Where**:
-  - `~/.claude/skills/<name>/SKILL.md` for cross-project skills — Claude
-    Code's default user-scope path, auto-symlinked into every claudebox
-    container by the entrypoint, so writes from the host reach every project.
-  - `/workspace/.agent/skills/<name>/SKILL.md` for skills specific to one
-    project (auto-loaded for that project via the `.claude/skills/`
-    symlink target).
+  - `/workspace/.agent/skills/<name>/SKILL.md` for anything you write from
+    inside a container. It is loaded for this project and tracked by the
+    workspace git.
+  - Cross-project skills live in the **host's** `~/.claude/skills/<name>/`,
+    which the entrypoint links read-only into every container. A skill
+    written to `~/.claude/skills/` from inside a container stays in that one
+    slot, so if a skill deserves to be cross-project, write it to the
+    workspace and tell the user to copy it to the host.
   - Each skill is a *directory* containing `SKILL.md` (required) plus any
     supporting files. Single-file `.md` skills are not recognized.
 - **SKILL.md format**: YAML frontmatter (`name`, `description`) followed by
@@ -196,7 +190,7 @@ alongside without collision).
 - `/workspace/.planning/plans/<slug>.md` — plan for a non-trivial task; archive when done.
 - `/workspace/.planning/decisions/NNN-<slug>.md` — long-lived "why X over Y" records
   (ADRs), numbered sequentially. Append-only; supersede via a new decision.
-- In-session todos → `TaskCreate` (ephemeral, don't persist to disk).
+- In-session todos → the built-in task tool (ephemeral, don't persist to disk).
 - Ephemeral project context (merge freezes, current blockers) →
   auto-memory `project` type.
 - Update STATE + the active plan at task close (see self-nudge).
