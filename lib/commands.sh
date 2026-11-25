@@ -151,6 +151,7 @@ show_help() {
         echo "  --enable-sudo                    Enable sudo without password"
         echo "  --disable-firewall               Disable network restrictions"
         echo "  --port [IP:][HOST:]PORT          Publish a container port (localhost only by default)"
+        echo "  --mount HOST[:CONTAINER][:ro]    Mount an extra host folder (same path by default)"
         echo
         echo "ClaudeBox Commands:"
         echo "$our_commands"
@@ -180,6 +181,7 @@ show_help() {
         echo "  --enable-sudo                    Enable sudo without password"
         echo "  --disable-firewall               Disable network restrictions"
         echo "  --port [IP:][HOST:]PORT          Publish a container port (localhost only by default)"
+        echo "  --mount HOST[:CONTAINER][:ro]    Mount an extra host folder (same path by default)"
         echo
         echo "Commands:"
         echo "$our_commands"
@@ -224,6 +226,7 @@ show_full_help() {
   --enable-sudo                    Enable sudo without password\
   --disable-firewall               Disable network restrictions\
   --port [IP:][HOST:]PORT          Publish a container port (localhost only by default)\
+  --mount HOST[:CONTAINER][:ro]    Mount an extra host folder (same path by default)\
 ' | \
             sed '$ a\
   profiles                        List all available profiles\

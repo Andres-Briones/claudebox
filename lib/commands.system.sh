@@ -12,6 +12,10 @@ _cmd_save() {
     if [[ -n "${CLI_PUBLISH_PORTS:-}" ]]; then
         error "--port can't be saved as a default; pass it per launch"
     fi
+    # The parser already consumed --mount, so `save` would never see it
+    if [[ -n "${CLI_EXTRA_MOUNTS:-}" ]]; then
+        error "--mount can't be saved as a default; pass it per launch"
+    fi
 
     if [[ $# -eq 0 ]]; then
         if [[ -f "$defaults_file" ]]; then

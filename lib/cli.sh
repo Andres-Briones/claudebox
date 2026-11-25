@@ -28,6 +28,7 @@ parse_cli_args() {
     script_command=""
     pass_through=()
     publish_ports=""
+    extra_mounts=""
 
     # Single parsing loop - each arg goes into exactly ONE bucket
     local found_script_command=false
@@ -50,6 +51,20 @@ parse_cli_args() {
                 return 1
             fi
             publish_ports="${publish_ports:+$publish_ports }$spec"
+        elif [[ "$arg" == "--mount" ]] || [[ "$arg" == --mount=* ]]; then
+            # Host-side flag with a value: becomes `docker run -v`, never reaches the container
+            if [[ "$arg" == "--mount" ]]; then
+                spec="${all_args[$i]:-}"
+                i=$((i + 1))
+            else
+                spec="${arg#--mount=}"
+            fi
+            if ! spec=$(normalize_mount_spec "$spec"); then
+                return 1
+            fi
+            # Newline-separated: paths may contain spaces
+            extra_mounts="${extra_mounts:+$extra_mounts
+}$spec"
         elif [[ " ${HOST_ONLY_FLAGS[*]} " == *" $arg "* ]]; then
             # Bucket 1: Host-only flags
             host_flags+=("$arg")
@@ -72,6 +87,7 @@ parse_cli_args() {
     export CLI_SCRIPT_COMMAND="$script_command"
     export CLI_PASS_THROUGH=("${pass_through[@]}")
     export CLI_PUBLISH_PORTS="$publish_ports"
+    export CLI_EXTRA_MOUNTS="$extra_mounts"
 }
 
 # normalize_port_spec - Turn a --port value into a `docker run -p` spec.
@@ -117,6 +133,84 @@ published_container_ports() {
         out="${out:+$out }${spec##*:}"
     done
     printf '%s' "$out"
+}
+
+# normalize_mount_spec - Turn a --mount value into a `docker run -v` spec.
+# Accepts HOST_PATH or HOST_PATH:CONTAINER_PATH, optionally followed by :ro or :rw.
+# Without a container path the mount lands at the same path as on the host, so
+# absolute symlinks in the project that point at it resolve inside the slot.
+normalize_mount_spec() {
+    local spec="$1"
+    local mode="rw"
+    local host_path container_path parent
+    local usage="expected HOST_PATH[:CONTAINER_PATH][:ro]"
+    case "$spec" in
+        *:ro|*:rw)
+            mode="${spec##*:}"
+            spec="${spec%:*}"
+            ;;
+    esac
+    case "$spec" in
+        *:*:*)
+            printf "claudebox: invalid --mount value '%s' (%s)\n" "$1" "$usage" >&2
+            return 1
+            ;;
+        *:*)
+            host_path="${spec%%:*}"
+            container_path="${spec#*:}"
+            ;;
+        *)
+            host_path="$spec"
+            container_path=""
+            ;;
+    esac
+    if [[ -z "$host_path" ]] || [[ "$spec" == *$'\n'* ]]; then
+        printf "claudebox: invalid --mount value '%s' (%s)\n" "$1" "$usage" >&2
+        return 1
+    fi
+
+    # The shell expands ~ in `--mount ~/x` but not in `--mount=~/x`
+    case "$host_path" in
+        "~") host_path="$HOME" ;;
+        "~/"*) host_path="$HOME/${host_path#??}" ;;
+    esac
+    if [[ "$host_path" != /* ]]; then
+        host_path="$PWD/$host_path"
+    fi
+
+    # Docker would silently create a missing source as a root-owned directory on the host
+    if [[ ! -e "$host_path" ]]; then
+        printf "claudebox: --mount path '%s' does not exist on the host\n" "$host_path" >&2
+        return 1
+    fi
+    if [[ -d "$host_path" ]]; then
+        if ! host_path=$(cd "$host_path" && pwd); then
+            printf "claudebox: --mount path in '%s' is not accessible\n" "$1" >&2
+            return 1
+        fi
+    else
+        if ! parent=$(cd "$(dirname "$host_path")" && pwd); then
+            printf "claudebox: --mount path in '%s' is not accessible\n" "$1" >&2
+            return 1
+        fi
+        host_path="${parent%/}/$(basename "$host_path")"
+    fi
+
+    if [[ -z "$container_path" ]]; then
+        container_path="$host_path"
+    fi
+    if [[ "$container_path" != "/" ]]; then
+        container_path="${container_path%/}"
+    fi
+    if [[ "$container_path" != /* ]]; then
+        printf "claudebox: --mount container path '%s' must be absolute\n" "$container_path" >&2
+        return 1
+    fi
+    if [[ "$container_path" == "/" ]] || [[ "$container_path" == "/workspace" ]]; then
+        printf "claudebox: --mount can't replace '%s' in the container; pick a target with HOST_PATH:CONTAINER_PATH\n" "$container_path" >&2
+        return 1
+    fi
+    printf '%s:%s:%s\n' "$host_path" "$container_path" "$mode"
 }
 
 # Process host-only flags and set environment variables
@@ -195,8 +289,9 @@ debug_parsed_args() {
         echo "[DEBUG]   Script command: ${CLI_SCRIPT_COMMAND}" >&2
         echo "[DEBUG]   Pass-through: ${CLI_PASS_THROUGH[*]}" >&2
         echo "[DEBUG]   Published ports: ${CLI_PUBLISH_PORTS:-}" >&2
+        printf '[DEBUG]   Extra mounts: %s\n' "$(printf '%s' "${CLI_EXTRA_MOUNTS:-}" | tr '\n' ' ')" >&2
     fi
 }
 
 # Export all functions
-export -f parse_cli_args normalize_port_spec _is_valid_port published_container_ports process_host_flags get_command_requirements requires_docker_image requires_slot debug_parsed_args
+export -f parse_cli_args normalize_port_spec normalize_mount_spec _is_valid_port published_container_ports process_host_flags get_command_requirements requires_docker_image requires_slot debug_parsed_args

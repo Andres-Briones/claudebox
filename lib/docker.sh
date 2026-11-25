@@ -656,6 +656,13 @@ run_claudebox_container() {
         docker_args+=(-p "$publish_spec")
     done
 
+    local mount_spec
+    while IFS= read -r mount_spec; do
+        if [[ -n "$mount_spec" ]]; then
+            docker_args+=(-v "$mount_spec")
+        fi
+    done <<< "${CLI_EXTRA_MOUNTS:-}"
+
     docker_args+=(
         -e "CLAUDEBOX_PUBLISHED_PORTS=$(published_container_ports)"
         -e "NODE_ENV=${NODE_ENV:-production}"

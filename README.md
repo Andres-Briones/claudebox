@@ -462,6 +462,12 @@ claudebox --disable-firewall
 #  prefix an IP, e.g. 0.0.0.0:8080:8080, to expose it beyond localhost)
 claudebox --port 8080
 
+# Mount an extra host folder into the slot (repeatable). It appears at the same path
+# as on the host, so absolute symlinks in the project that point at it keep working;
+# use HOST:CONTAINER to pick another target and append :ro for read-only
+claudebox --mount ~/datasets
+claudebox --mount ~/datasets:/data:ro
+
 # Skip permission checks
 claudebox --dangerously-skip-permissions
 ```

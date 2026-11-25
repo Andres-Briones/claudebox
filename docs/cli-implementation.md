@@ -76,6 +76,7 @@ done
 | `--enable-sudo` | Control | Entrypoint | Enables sudo in container | Yes |
 | `--disable-firewall` | Control | Entrypoint | Disables firewall | Yes |
 | `--port <spec>` | Host-only (takes a value) | CLI parser → `docker run -p` | Publishes a port on 127.0.0.1 unless spec starts with an IP; repeatable; opens that port in the slot firewall | No |
+| `--mount <spec>` | Host-only (takes a value) | CLI parser → `docker run -v` | Bind-mounts `HOST[:CONTAINER][:ro]`; target defaults to the host path; host path must exist; repeatable | No |
 | `shell` | Script command | Host | Launches interactive shell | No |
 | `create` | Script command | Host | Creates new slot | No |
 | `slot`/`slots` | Script command | Host | Manages slots | No |
