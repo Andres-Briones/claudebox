@@ -1,0 +1,42 @@
+# Fingerprints (cksum CRC, size, original path) of slash commands that used to
+# ship in commands/. sync_commands_to_project uses them to remove the copies
+# older versions left in project command dirs and in ~/.claude/commands.
+3358174161 43312 adaptive.md
+934426362 31478 agentflow.md
+2082063573 5554 BMad/agents/analyst.md
+3470186885 5311 BMad/agents/architect.md
+1370865046 5875 BMad/agents/bmad-master.md
+3259052426 7973 BMad/agents/bmad-orchestrator.md
+654796090 6325 BMad/agents/dev.md
+1111297229 4396 BMad/agents/pm.md
+2996143010 5427 BMad/agents/po.md
+1962625562 5231 BMad/agents/qa.md
+105601173 4141 BMad/agents/sm.md
+2674277002 4807 BMad/agents/ux-expert.md
+2519662164 4424 BMad/tasks/advanced-elicitation.md
+1440747238 4952 BMad/tasks/brownfield-create-epic.md
+2397983382 4648 BMad/tasks/brownfield-create-story.md
+2254873143 7273 BMad/tasks/correct-course.md
+429983486 9465 BMad/tasks/create-brownfield-story.md
+2566971985 7460 BMad/tasks/create-deep-research-prompt.md
+3521599492 3821 BMad/tasks/create-doc.md
+3232528543 7391 BMad/tasks/create-next-story.md
+3533841941 13403 BMad/tasks/document-project.md
+1740897438 4109 BMad/tasks/execute-checklist.md
+2902330560 4746 BMad/tasks/facilitate-brainstorming-session.md
+1804186324 4672 BMad/tasks/generate-ai-frontend-prompt.md
+1086532102 5649 BMad/tasks/index-docs.md
+428353122 2748 BMad/tasks/kb-mode-interaction.md
+340688950 5470 BMad/tasks/review-story.md
+959945380 5867 BMad/tasks/shard-doc.md
+3485598407 6444 BMad/tasks/validate-next-story.md
+2891566639 6257 context_pipeline.md
+101263357 8718 controlflow.md
+709478240 7322 devops.md
+542370455 1995 init-docs.md
+1667728530 5884 pr-draft.md
+3881456234 2287 pr-review.md
+2193480767 3935 refactor.md
+1547426471 1937 taskengine.md
+1547426471 1937 taskflow.md
+190488987 3048 tdd.md

@@ -555,28 +555,64 @@ get_slot_index() {
     return 1
 }
 
-# Older versions also copied the bundled commands straight into the project
-# commands dir, so each one showed up a second time without the cbox:
-# namespace. Remove those copies; anything the user changed or added stays.
+# Older versions copied the bundled commands into the top level of the project
+# commands dir and into ~/.claude/commands (which is synced to user/), so each
+# one showed up up to three times. The helpers below recognise those copies by
+# content, so anything the user edited or wrote is left alone.
+_command_fingerprint() {
+    cksum < "$1" | awk '{print $1 " " $2}'
+}
+
+# Fingerprints of every command that ships now or shipped in the past.
+_bundled_command_fingerprints() {
+    local cbox_source="$1"
+    local retired="${CLAUDEBOX_SCRIPT_DIR:-${SCRIPT_DIR}}/lib/retired-commands.cksum"
+    local file
+    if [[ -f "$retired" ]]; then
+        awk '$1 !~ /^#/ && NF >= 2 {print $1 " " $2}' "$retired"
+    fi
+    if [[ -d "$cbox_source" ]]; then
+        find "$cbox_source" -type f | while read -r file; do
+            _command_fingerprint "$file"
+        done
+    fi
+}
+
+_is_bundled_command_copy() {
+    local file="$1"
+    local known="$2"
+    local fingerprint
+    fingerprint=$(_command_fingerprint "$file")
+    case "
+$known
+" in
+        *"
+$fingerprint
+"*) return 0 ;;
+    esac
+    return 1
+}
+
 prune_unnamespaced_bundled_commands() {
     local commands_dir="$1"
     local cbox_source="$2"
-    if [[ ! -d "$cbox_source" ]] || [[ ! -d "$commands_dir" ]]; then
+    if [[ ! -d "$commands_dir" ]]; then
         return 0
     fi
 
-    local rel
-    (cd "$cbox_source" && find . -type f) | while read -r rel; do
+    local known rel
+    known=$(_bundled_command_fingerprints "$cbox_source")
+    (cd "$commands_dir" && find . -type f) | while read -r rel; do
         rel="${rel#./}"
         case "$rel" in cbox/*|user/*) continue ;; esac
-        if [[ -f "$commands_dir/$rel" ]] && cmp -s "$cbox_source/$rel" "$commands_dir/$rel"; then
+        if _is_bundled_command_copy "$commands_dir/$rel" "$known"; then
             rm -f "$commands_dir/$rel"
         fi
     done
-    (cd "$cbox_source" && find . -mindepth 1 -depth -type d) | while read -r rel; do
+    (cd "$commands_dir" && find . -mindepth 1 -depth -type d) | while read -r rel; do
         rel="${rel#./}"
         case "$rel" in cbox|cbox/*|user|user/*) continue ;; esac
-        if [[ -d "$commands_dir/$rel" ]] && [[ -z "$(ls -A "$commands_dir/$rel")" ]]; then
+        if [[ -z "$(ls -A "$commands_dir/$rel")" ]]; then
             rmdir "$commands_dir/$rel"
         fi
     done
@@ -671,6 +707,9 @@ sync_commands_to_project() {
             echo "[DEBUG] Syncing user commands to $commands_dir/user" >&2
         fi
         
+        local known_fingerprints
+        known_fingerprints=$(_bundled_command_fingerprints "$cbox_source")
+
         # Remove old user commands and recreate
         rm -rf "$commands_dir/user"
         mkdir -p "$commands_dir/user"
@@ -678,9 +717,7 @@ sync_commands_to_project() {
         # Copy preserving directory structure
         if cd "$user_source"; then
             find . -type f | while read -r file; do
-                # Older versions copied the bundled commands into
-                # ~/.claude/commands; those are already served under cbox/.
-                if [[ -f "$cbox_source/$file" ]] && cmp -s "$file" "$cbox_source/$file"; then
+                if _is_bundled_command_copy "$file" "$known_fingerprints"; then
                     continue
                 fi
                 local dir=$(dirname "$file")
@@ -718,3 +755,4 @@ export -f get_project_folder_name get_image_name _get_project_slug
 export -f get_project_by_path list_all_projects resolve_project_path
 export -f list_project_slots get_slot_dir get_slot_index prune_slot_counter
 export -f sync_commands_to_project prune_unnamespaced_bundled_commands
+export -f _command_fingerprint _bundled_command_fingerprints _is_bundled_command_copy
