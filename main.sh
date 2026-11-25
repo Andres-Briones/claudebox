@@ -428,10 +428,6 @@ main() {
         fi
     fi
     
-    # Step 11: Set up shared resources
-    setup_shared_commands
-    setup_claude_agent_command
-    
     # Step 12: Fix permissions if needed
     if [[ ! -d "$HOME/.claudebox" ]]; then
         mkdir -p "$HOME/.claudebox"

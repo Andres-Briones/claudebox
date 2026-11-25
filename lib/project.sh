@@ -76,8 +76,6 @@ init_project_dir() {
     [[ -f "$parent/profiles.ini" ]] || touch "$parent/profiles.ini"
     # store project path
     echo "$path" > "$parent/.project_path"
-    # set up commands symlink in parent (once per project)
-    setup_claude_agent_command "$parent"
     # Sync commands to project
     sync_commands_to_project "$parent"
     
@@ -557,6 +555,33 @@ get_slot_index() {
     return 1
 }
 
+# Older versions also copied the bundled commands straight into the project
+# commands dir, so each one showed up a second time without the cbox:
+# namespace. Remove those copies; anything the user changed or added stays.
+prune_unnamespaced_bundled_commands() {
+    local commands_dir="$1"
+    local cbox_source="$2"
+    if [[ ! -d "$cbox_source" ]] || [[ ! -d "$commands_dir" ]]; then
+        return 0
+    fi
+
+    local rel
+    (cd "$cbox_source" && find . -type f) | while read -r rel; do
+        rel="${rel#./}"
+        case "$rel" in cbox/*|user/*) continue ;; esac
+        if [[ -f "$commands_dir/$rel" ]] && cmp -s "$cbox_source/$rel" "$commands_dir/$rel"; then
+            rm -f "$commands_dir/$rel"
+        fi
+    done
+    (cd "$cbox_source" && find . -mindepth 1 -depth -type d) | while read -r rel; do
+        rel="${rel#./}"
+        case "$rel" in cbox|cbox/*|user|user/*) continue ;; esac
+        if [[ -d "$commands_dir/$rel" ]] && [[ -z "$(ls -A "$commands_dir/$rel")" ]]; then
+            rmdir "$commands_dir/$rel"
+        fi
+    done
+}
+
 # Sync commands from bundled and user sources to project
 sync_commands_to_project() {
     local project_parent="$1"
@@ -584,6 +609,9 @@ sync_commands_to_project() {
     # Get checksum of user commands if directory exists
     if [[ -d "$user_source" ]]; then
         user_checksum=$(find "$user_source" -type f -exec sha256sum {} \; 2>/dev/null | sort | sha256sum | cut -d' ' -f1)
+        # Which user files get skipped as bundled duplicates depends on the
+        # bundled set, so a bundled change must trigger a user resync too.
+        user_checksum="${user_checksum}-${cbox_checksum}"
     fi
     
     # Check if cbox commands need syncing
@@ -650,6 +678,11 @@ sync_commands_to_project() {
         # Copy preserving directory structure
         if cd "$user_source"; then
             find . -type f | while read -r file; do
+                # Older versions copied the bundled commands into
+                # ~/.claude/commands; those are already served under cbox/.
+                if [[ -f "$cbox_source/$file" ]] && cmp -s "$file" "$cbox_source/$file"; then
+                    continue
+                fi
                 local dir=$(dirname "$file")
                 mkdir -p "$commands_dir/user/$dir"
                 cp "$file" "$commands_dir/user/$file"
@@ -661,6 +694,8 @@ sync_commands_to_project() {
         echo "$user_checksum" > "$user_checksum_file"
     fi
     
+    prune_unnamespaced_bundled_commands "$commands_dir" "$cbox_source"
+
     # Clean up empty directories if sources don't exist
     if [[ ! -d "$cbox_source" ]] && [[ -d "$commands_dir/cbox" ]]; then
         rm -rf "$commands_dir/cbox"
@@ -682,4 +717,4 @@ export -f create_container determine_next_start_container project_has_slots find
 export -f get_project_folder_name get_image_name _get_project_slug
 export -f get_project_by_path list_all_projects resolve_project_path
 export -f list_project_slots get_slot_dir get_slot_index prune_slot_counter
-export -f sync_commands_to_project
+export -f sync_commands_to_project prune_unnamespaced_bundled_commands

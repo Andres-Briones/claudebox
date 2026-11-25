@@ -51,69 +51,6 @@ update_symlink() {
 }
 
 
-# Ensure shared commands folder exists and is up to date
-setup_shared_commands() {
-    local shared_commands="$HOME/.claude/commands"
-    # Script is now at root, so SCRIPT_DIR is the root dir
-    local commands_source="$SCRIPT_DIR/commands"
-    
-    # Create shared commands directory if it doesn't exist
-    mkdir -p "$shared_commands"
-    
-    # Copy/update commands from script directory if it exists
-    if [[ -d "$commands_source" ]]; then
-        # Copy new or updated files (preserve existing user files)
-        cp -n "$commands_source/"* "$shared_commands/" 2>/dev/null || true
-        
-        # For existing files, only update if source is newer
-        for file in "$commands_source"/*; do
-            if [[ -f "$file" ]]; then
-                local basename=$(basename "$file")
-                local dest_file="$shared_commands/$basename"
-                if [[ -f "$dest_file" ]] && [[ "$file" -nt "$dest_file" ]]; then
-                    cp "$file" "$dest_file"
-                    if [[ "$VERBOSE" == "true" ]]; then
-                        info "Updated command: $basename"
-                    fi
-                fi
-            fi
-        done
-        
-        if [[ "$VERBOSE" == "true" ]]; then
-            info "Synchronized commands to shared folder: $shared_commands"
-        fi
-    fi
-}
-
-setup_claude_agent_command() {
-    # Takes parent directory as argument
-    local parent_dir="${1:-}"
-    [[ -z "$parent_dir" ]] && return 0
-    
-    # Copy bundled commands to parent folder
-    local bundled_commands="$SCRIPT_DIR/commands"
-    local commands_dest="$parent_dir/commands"
-    
-    # Only copy if commands destination doesn't already exist
-    if [[ ! -e "$commands_dest" ]]; then
-        if [[ -d "$bundled_commands" ]]; then
-            # Copy bundled commands
-            cp -r "$bundled_commands" "$commands_dest"
-            
-            if [[ "$VERBOSE" == "true" ]]; then
-                info "Copied bundled commands to: $commands_dest"
-            fi
-        else
-            # Create empty commands directory
-            mkdir -p "$commands_dest"
-            
-            if [[ "$VERBOSE" == "true" ]]; then
-                info "Created empty commands directory: $commands_dest"
-            fi
-        fi
-    fi
-}
-
 # Calculate checksums for different Docker build layers
 calculate_docker_layer_checksums() {
     local project_dir="${1:-$PROJECT_DIR}"
@@ -291,4 +228,4 @@ save_docker_layer_checksums() {
     fi
 }
 
-export -f update_symlink setup_shared_commands setup_claude_agent_command calculate_docker_layer_checksums needs_docker_rebuild save_docker_layer_checksums
+export -f update_symlink calculate_docker_layer_checksums needs_docker_rebuild save_docker_layer_checksums

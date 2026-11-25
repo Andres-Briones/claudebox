@@ -57,3 +57,10 @@ All 13 tests should pass in both Bash 3.2 and modern Bash versions.
 ## macOS Testing
 
 These tests are particularly important for macOS users, as macOS ships with Bash 3.2 by default. The Docker test ensures compatibility without needing access to a Mac.
+### test_commands_sync.sh
+Checks that bundled slash commands reach a project exactly once (under `cbox/`), and that copies left at the top level or in `~/.claude/commands` by older versions are pruned without touching the user's own commands.
+
+**Usage:**
+```bash
+bash tests/test_commands_sync.sh
+```
